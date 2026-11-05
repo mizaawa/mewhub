@@ -1,0 +1,241 @@
+name: Release
+
+# Builds installable packages and attaches them to a GitHub Release.
+#
+# Triggers:
+#   - pushing a tag like v1.2.3 (creates the release automatically)
+#   - publishing a release in the GitHub UI
+#   - manual run with an existing tag
+#
+# Optional repository secrets for a stable Android signature (recommended;
+# without them APKs are debug-signed and cannot be updated in place):
+#   ANDROID_KEYSTORE_BASE64   base64 of the .jks file
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build (e.g. v1.0.0)'
+        required: true
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.47.9'
+  TAG: ${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  meta:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      build: ${{ steps.v.outputs.build }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          tag="$TAG"
+          version="${tag#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Tag '$tag' is not semver (expected vMAJOR.MINOR.PATCH[-suffix])"
+            exit 1
+          fi
+          core="${version%%-*}"
+          IFS=. read -r ma mi pa <<< "$core"
+          build=$(( ma * 10000 + mi * 100 + pa ))
+          pre=false
+          [[ "$version" == *-* ]] && pre=true
+          {
+            echo "tag=$tag"
+            echo "version=$core"
+            echo "build=$build"
+            echo "prerelease=$pre"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $tag -> version $core ($build), prerelease=$pre"
+
+  test:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+
+  android:
+    name: Android APK + AAB
+    needs: [meta, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Gradle cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Restore signing key
+        id: sign
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "path=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set; APKs are signed with a debug key."
+          fi
+
+      - name: Build
+        shell: bash
+        env:
+          MEWHUB_KEYSTORE_PATH: ${{ steps.sign.outputs.path }}
+          MEWHUB_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MEWHUB_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MEWHUB_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          BUILD: ${{ needs.meta.outputs.build }}
+        run: |
+          flutter build apk --release --split-per-abi --build-name="$VERSION" --build-number="$BUILD"
+          flutter build apk --release --build-name="$VERSION" --build-number="$BUILD"
+          flutter build appbundle --release --build-name="$VERSION" --build-number="$BUILD"
+          mkdir -p dist
+          out=build/app/outputs/flutter-apk
+          cp "$out/app-arm64-v8a-release.apk"   "dist/MewHub-$VERSION-android-arm64-v8a.apk"
+          cp "$out/app-armeabi-v7a-release.apk" "dist/MewHub-$VERSION-android-armeabi-v7a.apk"
+          cp "$out/app-x86_64-release.apk"      "dist/MewHub-$VERSION-android-x86_64.apk"
+          cp "$out/app-release.apk"             "dist/MewHub-$VERSION-android-universal.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/MewHub-$VERSION-android.aab"
+          (cd dist && sha256sum ./* > SHA256SUMS-android.txt)
+          ls -la dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-dist
+          path: dist/*
+          retention-days: 14
+
+  ios:
+    name: iOS IPA (unsigned)
+    needs: [meta, test]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Build
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          BUILD: ${{ needs.meta.outputs.build }}
+        run: |
+          flutter build ios --release --no-codesign --build-name="$VERSION" --build-number="$BUILD"
+          mkdir -p dist Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry "dist/MewHub-$VERSION-ios-unsigned.ipa" Payload
+          (cd dist && shasum -a 256 ./* > SHA256SUMS-ios.txt)
+          ls -la dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios-dist
+          path: dist/*
+          retention-days: 14
+
+  publish:
+    name: Publish release
+    needs: [meta, android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release notes
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          {
+            echo "## 📦 Downloads"
+            echo
+            echo "| Platform | File |"
+            echo "|---|---|"
+            echo "| Android, most phones (64-bit) | \`MewHub-$VERSION-android-arm64-v8a.apk\` |"
+            echo "| Android, older 32-bit phones | \`MewHub-$VERSION-android-armeabi-v7a.apk\` |"
+            echo "| Android, any device | \`MewHub-$VERSION-android-universal.apk\` |"
+            echo "| Android, Google Play upload | \`MewHub-$VERSION-android.aab\` |"
+            echo "| iOS, sideload | \`MewHub-$VERSION-ios-unsigned.ipa\` |"
+            echo
+            echo "The iOS IPA is **unsigned**. Install it with AltStore, SideStore, Sideloadly or TrollStore,"
+            echo "which re-sign it with your own Apple ID. Checksums are in \`SHA256SUMS-*.txt\`."
+          } > notes.md
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: MewHub ${{ needs.meta.outputs.tag }}
+          body_path: notes.md
+          generate_release_notes: true
+          prerelease: ${{ needs.meta.outputs.prerelease }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.apk
+            dist/*.aab
+            dist/*.ipa
+            dist/SHA256SUMS-*.txt
