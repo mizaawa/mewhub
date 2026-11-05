@@ -96,8 +96,25 @@ class _MewHubAppState extends State<MewHubApp> with WidgetsBindingObserver {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       // Rebuild every page when the language changes, since strings come from t().
       key: ValueKey('lang-${I18n.isZh}'),
-      home: s.onboarded ? const ChatPage() : const OnboardingPage(),
+      home: const _Root(),
       routes: _routes,
+    );
+  }
+}
+
+/// Switches between onboarding and chat. It watches the store itself because
+/// a route built from [MaterialApp.home] is not rebuilt when `home` changes.
+class _Root extends StatelessWidget {
+  const _Root();
+
+  @override
+  Widget build(BuildContext context) {
+    final onboarded = context.select<SettingsStore, bool>((s) => s.value.onboarded);
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 520),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: onboarded ? const ChatPage(key: ValueKey('chat')) : const OnboardingPage(key: ValueKey('onboarding')),
     );
   }
 }

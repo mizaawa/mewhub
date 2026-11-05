@@ -17,7 +17,7 @@ MewHub 是一个多供应商 AI 聊天客户端，功能参考 [RikkaHub](https:
 
 ### 功能
 
-- **三种协议原生实现**：OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini，全部流式输出
+- **四种协议原生实现**：OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini，全部流式输出
 - **任意第三方 API**：自定义 Base URL / 路径 / 请求头 / 请求体，多 Key 轮询，余额查询；内置 DeepSeek、OpenRouter、硅基流动、月之暗面、百炼、火山、智谱、xAI、Ollama 等模板
 - **导入配置**：扫码 / 剪贴板导入，兼容 RikkaHub 的 `ai-provider:v1:` 分享码与通用 JSON
 - **深度思考**：思考强度六档，按厂商自动转换参数（Claude adaptive thinking、OpenAI reasoning effort、Gemini thinkingConfig、DeepSeek/Qwen/GLM/Kimi 开关），思考过程可折叠；签名与加密推理内容会正确回传，多轮工具调用不丢上下文

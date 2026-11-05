@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../ai/message.dart';
@@ -90,6 +91,8 @@ class ComposerState extends State<Composer> {
     _text.removeListener(_onChanged);
     if (widget.controller == null) _text.dispose();
     _focus.dispose();
+    if (_stt.statusListener == _onSttStatus) _stt.statusListener = null;
+    if (_stt.errorListener == _onSttError) _stt.errorListener = null;
     _stt.cancel();
     super.dispose();
   }
@@ -137,21 +140,15 @@ class ComposerState extends State<Composer> {
   Future<void> _toggleListening() async {
     if (_listening) return _stopListening();
     try {
-      final ok = await _stt.initialize(
-        onStatus: (s) {
-          if ((s == 'done' || s == 'notListening') && mounted) setState(() => _listening = false);
-        },
-        onError: (e) {
-          if (mounted) {
-            setState(() => _listening = false);
-            toast(context, e.errorMsg, error: true);
-          }
-        },
-      );
+      final ok = await _stt.initialize(onStatus: _onSttStatus, onError: _onSttError);
       if (!ok) {
         if (mounted) toast(context, t('语音识别不可用或未授权', 'Speech recognition unavailable or not permitted'), error: true);
         return;
       }
+      // SpeechToText is a singleton and initialize() keeps the listeners from
+      // its first call, so a recreated composer must re-register its own.
+      _stt.statusListener = _onSttStatus;
+      _stt.errorListener = _onSttError;
       _sttBase = _text.text.isEmpty ? '' : '${_text.text} ';
       setState(() => _listening = true);
       await _stt.listen(
@@ -169,6 +166,16 @@ class ComposerState extends State<Composer> {
         toast(context, '$e', error: true);
       }
     }
+  }
+
+  void _onSttStatus(String s) {
+    if ((s == 'done' || s == 'notListening') && mounted) setState(() => _listening = false);
+  }
+
+  void _onSttError(SpeechRecognitionError e) {
+    if (!mounted) return;
+    setState(() => _listening = false);
+    toast(context, e.errorMsg, error: true);
   }
 
   Future<void> _stopListening() async {

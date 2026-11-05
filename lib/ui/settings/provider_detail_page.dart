@@ -39,6 +39,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   late final _balPath = TextEditingController(text: _p.balancePath);
   bool _obscure = true;
   bool _fetching = false;
+  bool _deleted = false;
   String? _balance;
 
   @override
@@ -168,7 +169,10 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     final scheme = Theme.of(context).colorScheme;
     final isOpenAi = _p.kind == ProviderKind.openai;
     return PopScope(
-      onPopInvokedWithResult: (didPop, _) => _saveFields(),
+      // Saving on pop would re-add a provider that was just deleted.
+      onPopInvokedWithResult: (didPop, _) {
+        if (!_deleted) _saveFields();
+      },
       child: Scaffold(
         appBar: AppBar(
           title: Text(_p.name),
@@ -179,6 +183,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
               icon: Icon(Icons.delete_outline_rounded, color: scheme.error),
               onPressed: () async {
                 if (await confirm(context, t('删除「${_p.name}」？', 'Delete "${_p.name}"?'), destructive: true)) {
+                  _deleted = true;
                   _store.removeProvider(_p.id);
                   if (context.mounted) Navigator.pop(context);
                 }

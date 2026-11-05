@@ -138,7 +138,10 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
           BUILD: ${{ needs.meta.outputs.build }}
         run: |
-          flutter build apk --release --split-per-abi --build-name="$VERSION" --build-number="$BUILD"
+          # Same versionCode for split and universal APKs, so users can switch
+          # between them without Android treating it as a downgrade.
+          flutter build apk --release --split-per-abi --build-name="$VERSION" --build-number="$BUILD" \
+            --android-project-arg=force-version-code-ignoring-abi=true
           flutter build apk --release --build-name="$VERSION" --build-number="$BUILD"
           flutter build appbundle --release --build-name="$VERSION" --build-number="$BUILD"
           mkdir -p dist
