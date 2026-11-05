@@ -102,8 +102,7 @@ class _MewHubAppState extends State<MewHubApp> with WidgetsBindingObserver {
   }
 }
 
-/// Switches between onboarding and chat. It watches the store itself because
-/// a route built from [MaterialApp.home] is not rebuilt when `home` changes.
+/// Cross-fades from onboarding to chat once setup is finished.
 class _Root extends StatelessWidget {
   const _Root();
 
