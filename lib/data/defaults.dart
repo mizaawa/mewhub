@@ -1,6 +1,7 @@
 import '../ai/message.dart';
 import '../ai/provider_config.dart';
 import 'assistant.dart';
+import 'provider_branding.dart';
 
 const defaultAssistantId = '00000000-0000-4000-8000-00000000c47a';
 
@@ -102,6 +103,7 @@ ModelConfig _m(
 
 /// Built-in provider templates. Keys are empty; users fill in their own.
 List<ProviderConfig> defaultProviders() => [
+  zakoProvider(),
   ProviderConfig(
     id: 'p-openai',
     kind: ProviderKind.openai,
@@ -219,15 +221,33 @@ List<ProviderConfig> defaultProviders() => [
     builtIn: true,
     enabled: false,
   ),
-  ProviderConfig(
-    id: 'p-ollama',
-    kind: ProviderKind.openai,
-    name: 'Ollama (local)',
-    baseUrl: 'http://127.0.0.1:11434/v1',
-    builtIn: true,
-    enabled: false,
-  ),
 ];
+
+ProviderConfig zakoProvider() => ProviderConfig(
+  id: zakoProviderId,
+  kind: ProviderKind.openai,
+  name: 'Zako AI',
+  baseUrl: zakoBaseUrl,
+  useResponsesApi: true,
+  balanceUrl: '{{baseUrl}}/usage',
+  builtIn: true,
+  enabled: true,
+);
+
+/// Keep Zako enabled and pinned, then enabled providers before disabled ones.
+/// Filtering preserves the user's relative order within each group.
+List<ProviderConfig> normalizeProviders(List<ProviderConfig> providers) {
+  final stored = providers.where((p) => p.isZako).firstOrNull;
+  final official = stored == null
+      ? zakoProvider()
+      : !stored.builtIn
+      ? ProviderConfig.fromJson({...stored.toJson(), 'builtIn': true, 'enabled': true})
+      : stored.enabled
+      ? stored
+      : stored.copyWith(enabled: true);
+  final others = providers.where((p) => !p.isZako && !(p.builtIn && p.id == 'p-ollama')).toList();
+  return [official, ...others.where((p) => p.enabled), ...others.where((p) => !p.enabled)];
+}
 
 /// Seed used for preset messages of new assistants.
 ChatMessage greetingMessage(String text) => ChatMessage.text(Role.assistant, text);

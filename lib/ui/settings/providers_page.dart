@@ -5,9 +5,11 @@ import 'package:provider/provider.dart';
 import '../../ai/provider_config.dart';
 import '../../ai/share_codec.dart';
 import '../../core/i18n.dart';
+import '../../data/provider_branding.dart';
 import '../../state/settings_store.dart';
 import '../widgets/common.dart';
 import '../widgets/motion.dart';
+import '../widgets/provider_logo.dart';
 import 'provider_detail_page.dart';
 import 'qr_pages.dart';
 
@@ -17,7 +19,8 @@ class ProvidersPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<SettingsStore>();
-    final list = store.value.providers;
+    final official = store.value.providers.where((p) => p.isZako).firstOrNull;
+    final list = store.value.providers.where((p) => !p.isZako).toList();
     return Scaffold(
       appBar: AppBar(
         title: Text(t('供应商', 'Providers')),
@@ -49,12 +52,18 @@ class ProvidersPage extends StatelessWidget {
       ),
       body: ReorderableListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+        header: official == null
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ProviderCard(p: official),
+              ),
         itemCount: list.length,
         onReorderItem: (from, to) => store.update((s) {
-          final l = [...s.providers];
+          final l = s.providers.where((p) => !p.isZako).toList();
           final item = l.removeAt(from);
           l.insert(to, item);
-          return s.copyWith(providers: l);
+          return s.copyWith(providers: [?official, ...l]);
         }),
         proxyDecorator: (child, i, anim) => Material(
           color: Colors.transparent,
@@ -158,17 +167,24 @@ class _ProviderCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            AvatarView(value: '', fallback: p.name, size: 42),
+            ProviderLogo(provider: p, size: 42),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    p.name,
-                    style: Theme.of(context).textTheme.titleSmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          p.name,
+                          style: Theme.of(context).textTheme.titleSmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (p.isZako) ...[const SizedBox(width: 6), const OfficialProviderTag()],
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Wrap(
@@ -183,10 +199,12 @@ class _ProviderCard extends StatelessWidget {
                 ],
               ),
             ),
-            Switch(
-              value: p.enabled,
-              onChanged: (v) => store.upsertProvider(p.copyWith(enabled: v)),
-            ),
+            p.isZako
+                ? const AlwaysEnabledBadge()
+                : Switch(
+                    value: p.enabled,
+                    onChanged: (v) => store.upsertProvider(p.copyWith(enabled: v)),
+                  ),
           ],
         ),
       ),

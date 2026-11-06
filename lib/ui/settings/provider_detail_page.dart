@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../ai/factory.dart';
 import '../../ai/message.dart';
@@ -14,9 +15,11 @@ import '../../ai/share_codec.dart';
 import '../../core/i18n.dart';
 import '../../core/net.dart';
 import '../../core/util.dart';
+import '../../data/provider_branding.dart';
 import '../../state/settings_store.dart';
 import '../widgets/common.dart';
 import '../widgets/motion.dart';
+import '../widgets/provider_logo.dart';
 import 'model_edit_sheet.dart';
 
 class ProviderDetailPage extends StatefulWidget {
@@ -150,7 +153,8 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
         final i = int.tryParse(seg);
         cur = i != null && cur is List ? (i < cur.length ? cur[i] : null) : (cur is Map ? cur[seg] : null);
       }
-      setState(() => _balance = cur?.toString() ?? jsonEncode(j));
+      if (!mounted) return;
+      setState(() => _balance = cur is Map || cur is List ? jsonEncode(cur) : cur?.toString() ?? jsonEncode(j));
     } catch (e) {
       if (mounted) toast(context, '$e', error: true);
     }
@@ -162,6 +166,15 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       isScrollControlled: true,
       builder: (ctx) => _ShareSheet(provider: _p),
     );
+  }
+
+  Future<void> _openZako() async {
+    try {
+      final opened = await launchUrl(Uri.parse(zakoWebsite), mode: LaunchMode.externalApplication);
+      if (!opened && mounted) toast(context, t('无法打开官网', 'Could not open the website'), error: true);
+    } catch (_) {
+      if (mounted) toast(context, t('无法打开官网', 'Could not open the website'), error: true);
+    }
   }
 
   @override
@@ -178,31 +191,70 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
           title: Text(_p.name),
           actions: [
             IconButton(tooltip: t('分享', 'Share'), icon: const Icon(Icons.qr_code_2_rounded), onPressed: _share),
-            IconButton(
-              tooltip: t('删除', 'Delete'),
-              icon: Icon(Icons.delete_outline_rounded, color: scheme.error),
-              onPressed: () async {
-                if (await confirm(context, t('删除「${_p.name}」？', 'Delete "${_p.name}"?'), destructive: true)) {
-                  _deleted = true;
-                  _store.removeProvider(_p.id);
-                  if (context.mounted) Navigator.pop(context);
-                }
-              },
-            ),
+            if (!_p.isZako)
+              IconButton(
+                tooltip: t('删除', 'Delete'),
+                icon: Icon(Icons.delete_outline_rounded, color: scheme.error),
+                onPressed: () async {
+                  if (await confirm(context, t('删除「${_p.name}」？', 'Delete "${_p.name}"?'), destructive: true)) {
+                    _deleted = true;
+                    _store.removeProvider(_p.id);
+                    if (context.mounted) Navigator.pop(context);
+                  }
+                },
+              ),
           ],
         ),
         body: ListView(
           padding: const EdgeInsets.only(bottom: 40),
           children: [
+            if (_p.isZako)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: FilledButton.tonal(
+                  onPressed: _openZako,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.all(16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  ),
+                  child: Row(
+                    children: [
+                      ProviderLogo(provider: _p, size: 40),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(t('前往 Zako AI', 'Visit Zako AI'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 3),
+                            const Text('www.zayuapi.com', style: TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      const OfficialProviderTag(),
+                      const SizedBox(width: 10),
+                      const Icon(Icons.open_in_new_rounded, size: 20),
+                    ],
+                  ),
+                ),
+              ),
             SettingsGroup(
               title: t('基本', 'Basics'),
               children: [
-                SwitchListTile(
-                  secondary: const IconBadge(Icons.power_settings_new_rounded),
-                  title: Text(t('启用', 'Enabled')),
-                  value: _p.enabled,
-                  onChanged: (v) => _save(_p.copyWith(enabled: v)),
-                ),
+                if (_p.isZako)
+                  ListTile(
+                    leading: const IconBadge(Icons.lock_outline_rounded),
+                    title: Text(t('始终启用', 'Always enabled')),
+                    subtitle: Text(t('官方供应商无法停用', 'Official provider cannot be disabled')),
+                    trailing: Icon(Icons.verified_rounded, color: scheme.primary),
+                  )
+                else
+                  SwitchListTile(
+                    secondary: const IconBadge(Icons.power_settings_new_rounded),
+                    title: Text(t('启用', 'Enabled')),
+                    value: _p.enabled,
+                    onChanged: (v) => _save(_p.copyWith(enabled: v)),
+                  ),
                 _Field(controller: _name, label: t('名称', 'Name'), onDone: _saveFields),
                 _Field(controller: _url, label: 'Base URL', hint: 'https://api.example.com/v1', onDone: _saveFields),
                 _Field(

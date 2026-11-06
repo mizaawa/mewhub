@@ -31,18 +31,10 @@ class SettingsPage extends StatelessWidget {
       body: CustomScrollView(
         slivers: [
           SliverAppBar.large(title: Text(t('设置', 'Settings'))),
-          SliverToBoxAdapter(
-            child: EntranceFx(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: _HeroCard(providers: enabledProviders, models: models, assistants: s.assistants.length),
-              ),
-            ),
-          ),
           SliverList.list(
             children: [
               SettingsGroup(
-                index: 1,
+                index: 0,
                 title: t('外观', 'Appearance'),
                 children: [
                   ListTile(
@@ -122,7 +114,7 @@ class SettingsPage extends StatelessWidget {
                 ],
               ),
               SettingsGroup(
-                index: 2,
+                index: 1,
                 title: t('模型与服务', 'Models & services'),
                 children: [
                   nav(
@@ -154,7 +146,7 @@ class SettingsPage extends StatelessWidget {
                 ],
               ),
               SettingsGroup(
-                index: 3,
+                index: 2,
                 title: t('扩展', 'Extensions'),
                 children: [
                   nav(Icons.menu_book_outlined, t('世界书 / 模式', 'Lorebooks & modes'), '/settings/prompts'),
@@ -163,7 +155,7 @@ class SettingsPage extends StatelessWidget {
                 ],
               ),
               SettingsGroup(
-                index: 4,
+                index: 3,
                 title: t('数据', 'Data'),
                 children: [
                   nav(Icons.cloud_sync_outlined, t('备份与恢复', 'Backup & restore'), '/settings/backup'),
@@ -173,77 +165,10 @@ class SettingsPage extends StatelessWidget {
                 ],
               ),
               SettingsGroup(
-                index: 5,
+                index: 4,
                 children: [nav(Icons.info_outline_rounded, t('关于 MewHub', 'About MewHub'), '/settings/about')],
               ),
               const SizedBox(height: 32),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.providers, required this.models, required this.assistants});
-  final int providers;
-  final int models;
-  final int assistants;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    Widget stat(String n, String label) => Expanded(
-      child: Column(
-        children: [
-          TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: double.tryParse(n) ?? 0),
-            duration: const Duration(milliseconds: 900),
-            curve: Curves.easeOutCubic,
-            builder: (context, v, _) => Text(
-              v.round().toString(),
-              style: Theme.of(context).textTheme.headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w800, color: Colors.white),
-            ),
-          ),
-          Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.white70)),
-        ],
-      ),
-    );
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: LinearGradient(
-          colors: [scheme.primary, Color.lerp(scheme.primary, const Color(0xFFE9C3A0), 0.55)!],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(color: scheme.primary.withValues(alpha: 0.28), blurRadius: 24, offset: const Offset(0, 10)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text('🐱', style: TextStyle(fontSize: 26)),
-              const SizedBox(width: 10),
-              Text(
-                'MewHub',
-                style: Theme.of(context).textTheme.titleLarge
-                    ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: -0.3),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              stat('$providers', t('供应商', 'Providers')),
-              stat('$models', t('模型', 'Models')),
-              stat('$assistants', t('助手', 'Assistants')),
             ],
           ),
         ],

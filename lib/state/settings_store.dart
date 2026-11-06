@@ -11,6 +11,8 @@ import '../core/net.dart';
 import '../core/paths.dart';
 import '../core/util.dart';
 import '../data/assistant.dart';
+import '../data/defaults.dart';
+import '../data/provider_branding.dart';
 import '../data/models_misc.dart';
 import '../data/settings.dart';
 
@@ -54,7 +56,8 @@ class SettingsStore extends ChangeNotifier {
   }
 
   void update(AppSettings Function(AppSettings s) fn) {
-    _settings = fn(_settings);
+    final next = fn(_settings);
+    _settings = next.copyWith(providers: normalizeProviders(next.providers));
     _applyRuntime();
     notifyListeners();
     _scheduleSave();
@@ -151,7 +154,10 @@ class SettingsStore extends ChangeNotifier {
     return s.copyWith(providers: list);
   });
 
-  void removeProvider(String id) => update((s) => s.copyWith(providers: s.providers.where((e) => e.id != id).toList()));
+  void removeProvider(String id) {
+    if (id == zakoProviderId) return;
+    update((s) => s.copyWith(providers: s.providers.where((e) => e.id != id).toList()));
+  }
 
   void upsertAssistant(Assistant a) => update((s) {
     final list = [...s.assistants];

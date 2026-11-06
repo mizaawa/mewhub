@@ -382,7 +382,9 @@ class AppSettings {
       themeMode: enumByName(ThemeModePref.values, j['themeMode'], ThemeModePref.system),
       language: enumByName(AppLang.values, j['language'], AppLang.system),
       accentIndex: asInt(j['accentIndex']),
-      providers: j['providers'] == null ? defaultProviders() : mapList(j['providers'], ProviderConfig.fromJson),
+      providers: normalizeProviders(
+        j['providers'] == null ? defaultProviders() : mapList(j['providers'], ProviderConfig.fromJson),
+      ),
       assistants: list,
       currentAssistantId: list.any((a) => a.id == cur) ? cur : list.first.id,
       chatModelId: asStrOrNull(j['chatModelId']),

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "p-zako",
+    "website": "https://api.zayuapi.com",
+    "source": "https://api.zayuapi.com (embedded site icon)",
+    "sha256": "dd45e63079a44e8ef0dc4bfaaf395d94d944ea288af883813bdbe6022c9b7201",
+    "size": [
+      128,
+      128
+    ]
+  },
+  {
+    "id": "p-anthropic",
+    "website": "https://www.anthropic.com",
+    "source": "https://www.anthropic.com/favicon.ico",
+    "sha256": "28761d64425f1c9f5add8612cbd341a9e0083e9949af7ce65dde2886051520c5",
+    "size": [
+      48,
+      48
+    ]
+  },
+  {
+    "id": "p-gemini",
+    "website": "https://gemini.google.com",
+    "source": "https://www.gstatic.com/lamda/images/gemini_sparkle_4g_512_lt_f94943af3be039176192d.png",
+    "sha256": "55ca16d842ee05877161eac651c8d931f1749d3cdd3881f8b17e121d1e62c75b",
+    "size": [
+      128,
+      128
+    ]
+  },
+  {
+    "id": "p-deepseek",
+    "website": "https://www.deepseek.com",
+    "source": "https://www.deepseek.com/favicon.ico",
+    "sha256": "a4dcb3a2a0cb16a1e24f0cce2a373186dad1bd9c72b6ef738bb1baf33ff3cb10",
+    "size": [
+      128,
+      128
+    ]
+  },
+  {
+    "id": "p-openrouter",
+    "website": "https://openrouter.ai",
+    "source": "https://openrouter.ai/favicon/glyph.png",
+    "sha256": "adb598c9cf6e2d2ba2bba8735c5b522d92d6b481afc6a06098cef5525939cd71",
+    "size": [
+      128,
+      128
+    ]
+  },
+  {
+    "id": "p-siliconflow",
+    "website": "https://www.siliconflow.cn",
+    "source": "https://www.siliconflow.cn/favicon.ico",
+    "sha256": "807769b7b5b8da476778c0f49dde15d11d4bdc225cca4e9eb330408bcaf85d5e",
+    "size": [
+      48,
+      48
+    ]
+  },
+  {
+    "id": "p-moonshot",
+    "website": "https://www.moonshot.cn",
+    "source": "https://statics.kimi.ai/moonshot-ai/favicon.ico",
+    "sha256": "0ff51da64f51df0698eb56b1df298443185ea994c4e394599f0e5307b1906447",
+    "size": [
+      28,
+      28
+    ]
+  },
+  {
+    "id": "p-dashscope",
+    "website": "https://www.aliyun.com/product/bailian",
+    "source": "https://img.alicdn.com/tfs/TB1_ZXuNcfpK1RjSZFOXXa6nFXa-32-32.ico",
+    "sha256": "11c85f9f5370cb242183e74ff8be28c9ff8f619399c691da955120819e68ba28",
+    "size": [
+      32,
+      32
+    ]
+  },
+  {
+    "id": "p-volc",
+    "website": "https://www.volcengine.com",
+    "source": "https://portal.volccdn.com/obj/volcfe/misc/favicon.png",
+    "sha256": "682874f8bb775fc766ab128348f239b92c5e737390393f52953208e663359393",
+    "size": [
+      128,
+      128
+    ]
+  },
+  {
+    "id": "p-zhipu",
+    "website": "https://www.bigmodel.cn",
+    "source": "https://www.bigmodel.cn/static/images/favicon.png",
+    "sha256": "1be07acc89a80bebccb3ef79e7a1649854a37833d646979cd53608a1b48b9d3a",
+    "size": [
+      90,
+      90
+    ]
+  },
+  {
+    "id": "p-xai",
+    "website": "https://x.ai",
+    "source": "https://x.ai/favicon.ico",
+    "sha256": "30328af1780c3d4bfbe3d50089491b2a34d6da15c458c73e2ce71fbc99b3e80e",
+    "size": [
+      48,
+      48
+    ]
+  },
+  {
+    "id": "p-openai",
+    "website": "https://platform.openai.com/docs",
+    "source": "https://developers.openai.com/favicon.png",
+    "sha256": "41fecc1624642bd2364a53ae2728f876780fa59b9bfcc1b1f26d8f9e9cad6b00",
+    "size": [
+      48,
+      48
+    ]
+  }
+]
