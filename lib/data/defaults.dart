@@ -4,6 +4,7 @@ import 'assistant.dart';
 import 'provider_branding.dart';
 
 const defaultAssistantId = '00000000-0000-4000-8000-00000000c47a';
+const defaultAssistantAvatar = 'asset:assets/images/icon.png';
 
 const defaultTitlePrompt = '''I will give you some dialogue content in the `<content>` block.
 Summarize the conversation between user and assistant into a short title.
@@ -64,7 +65,7 @@ const learningModePrompt = '''The user is STUDYING and asked you to follow these
 Never solve homework outright. Work through problems one step at a time, asking one question per step.''';
 
 List<Assistant> defaultAssistants() => [
-  Assistant(id: defaultAssistantId, name: 'Mew', avatar: '🐱', systemPrompt: ''),
+  Assistant(id: defaultAssistantId, name: 'Mew', avatar: defaultAssistantAvatar, systemPrompt: ''),
   Assistant(
     name: '翻译官 Translator',
     avatar: '🌐',

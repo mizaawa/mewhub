@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/attachments.dart';
 import '../../core/i18n.dart';
 import '../../core/util.dart';
 import '../../data/database.dart';
+import '../../data/defaults.dart';
 import '../../state/app_state.dart';
 import '../../state/settings_store.dart';
 import '../widgets/common.dart';
 import '../widgets/motion.dart';
+import 'profile_header.dart';
+import 'sidebar_widgets.dart';
 
 /// Conversation list + navigation. Used as a Drawer on phones and as a
 /// permanent side panel on tablets ([embedded]).
@@ -22,9 +26,45 @@ class ChatDrawer extends StatefulWidget {
 class _ChatDrawerState extends State<ChatDrawer> {
   String _q = '';
   bool _allAssistants = false;
+  bool _searchOpen = false;
+  bool _sortByTitle = false;
+  final _searchFocus = FocusNode();
+  final _historyScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _searchFocus.dispose();
+    _historyScroll.dispose();
+    super.dispose();
+  }
 
   void _close() {
     if (!widget.embedded) Navigator.of(context).maybePop();
+  }
+
+  void _toggleSearch() {
+    final next = !_searchOpen;
+    setState(() {
+      _searchOpen = next;
+      if (!next) _q = '';
+    });
+    if (next) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocus.requestFocus();
+      });
+    }
+  }
+
+  void _showHistory() {
+    setState(() => _q = '');
+    if (_historyScroll.hasClients) {
+      _historyScroll.animateTo(0, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic);
+    }
+  }
+
+  void _navigate(String route) {
+    _close();
+    Navigator.of(context).pushNamed(route);
   }
 
   String _bucket(DateTime d) {
@@ -39,6 +79,81 @@ class _ChatDrawerState extends State<ChatDrawer> {
     return '${d.year}-${twoDigits(d.month)}';
   }
 
+  Future<void> _editProfile(SettingsStore store) async {
+    final display = store.value.display;
+    final name = TextEditingController(text: display.userName);
+    var avatar = display.userAvatar;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setSheetState) => Padding(
+            padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(t('个人资料', 'Profile'), style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    ClipOval(
+                      child: AvatarView(
+                        value: avatar.isEmpty ? defaultAssistantAvatar : avatar,
+                        fallback: name.text.isEmpty ? 'MewHub' : name.text,
+                        size: 68,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          final picked = await Attachments.pickAvatar();
+                          if (picked != null && context.mounted) setSheetState(() => avatar = picked);
+                        },
+                        icon: const Icon(Icons.photo_camera_back_outlined),
+                        label: Text(t('更换头像', 'Change photo')),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: t('恢复默认头像', 'Use default avatar'),
+                      onPressed: () => setSheetState(() => avatar = ''),
+                      icon: const Icon(Icons.restart_alt_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: name,
+                  textCapitalization: TextCapitalization.words,
+                  maxLength: 40,
+                  decoration: InputDecoration(labelText: t('昵称', 'Name'), prefixIcon: const Icon(Icons.badge_outlined)),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () {
+                    store.update(
+                      (s) => s.copyWith(
+                        display: s.display.copyWith(userName: name.text.trim(), userAvatar: avatar),
+                      ),
+                    );
+                    Navigator.of(sheetContext).pop();
+                  },
+                  child: Text(t('保存', 'Save')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } finally {
+      name.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -50,6 +165,14 @@ class _ChatDrawerState extends State<ChatDrawer> {
         .where((c) => _allAssistants || c.assistantId == s.currentAssistantId)
         .where((c) => q.isEmpty || c.title.toLowerCase().contains(q) || c.preview.toLowerCase().contains(q))
         .toList();
+    list.sort((a, b) {
+      if (_sortByTitle) {
+        final aTitle = a.title.isEmpty ? a.preview : a.title;
+        final bTitle = b.title.isEmpty ? b.preview : b.title;
+        return aTitle.toLowerCase().compareTo(bTitle.toLowerCase());
+      }
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
     final pinned = list.where((c) => c.pinned).toList();
     final rest = list.where((c) => !c.pinned).toList();
     final groups = <String, List<ConversationSummary>>{};
@@ -77,29 +200,54 @@ class _ChatDrawerState extends State<ChatDrawer> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _AssistantHeader(onChanged: () => setState(() {})),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                      hintText: t('搜索对话', 'Search chats'),
-                      isDense: true,
-                    ),
-                    onChanged: (v) => setState(() => _q = v),
+          UserProfileHeader(
+            name: s.display.userName,
+            avatar: s.display.userAvatar,
+            onTap: () => _editProfile(context.read<SettingsStore>()),
+          ),
+          const SizedBox(height: 8),
+          SidebarQuickLinks(
+            searchOpen: _searchOpen,
+            onHistory: _showHistory,
+            onSearch: _toggleSearch,
+            onImages: () => _navigate('/imagegen'),
+            onTranslate: () => _navigate('/translator'),
+          ),
+          if (_searchOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 5, 14, 2),
+              child: TextField(
+                key: const ValueKey('sidebar-search-field'),
+                focusNode: _searchFocus,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  hintText: t('搜索对话', 'Search chats'),
+                  isDense: true,
+                  filled: true,
+                  fillColor: scheme.surfaceContainerLowest,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide.none,
                   ),
                 ),
-                const SizedBox(width: 6),
-                IconButton.filledTonal(
-                  tooltip: _allAssistants ? t('显示当前助手', 'Current assistant') : t('显示全部助手', 'All assistants'),
-                  onPressed: () => setState(() => _allAssistants = !_allAssistants),
-                  icon: Icon(_allAssistants ? Icons.groups_rounded : Icons.person_rounded),
-                ),
-              ],
+                onChanged: (v) => setState(() => _q = v),
+              ),
             ),
+          SidebarChatToolbar(
+            allAssistants: _allAssistants,
+            sortByTitle: _sortByTitle,
+            onNewChat: () {
+              app.newChat();
+              _close();
+            },
+            onToggleAssistants: () => setState(() => _allAssistants = !_allAssistants),
+            onToggleSort: () => setState(() => _sortByTitle = !_sortByTitle),
           ),
           Expanded(
             child: items.isEmpty
@@ -107,15 +255,11 @@ class _ChatDrawerState extends State<ChatDrawer> {
                     icon: Icons.forum_outlined,
                     title: q.isEmpty ? t('还没有对话', 'No chats yet') : t('没有匹配的对话', 'No matches'),
                   )
-                : ListView(padding: const EdgeInsets.fromLTRB(8, 0, 8, 8), children: items),
+                : ListView(controller: _historyScroll, padding: const EdgeInsets.fromLTRB(8, 0, 8, 8), children: items),
           ),
           const Divider(height: 1),
-          _NavBar(
-            onNavigate: (route) {
-              _close();
-              Navigator.of(context).pushNamed(route);
-            },
-          ),
+          _AssistantHeader(onChanged: () => setState(() {})),
+          SidebarBottomActions(onNavigate: _navigate),
         ],
       ),
     );
@@ -151,21 +295,14 @@ class _ChatDrawerState extends State<ChatDrawer> {
               borderRadius: BorderRadius.circular(14),
             ),
             child: ListTile(
-              dense: true,
+              minVerticalPadding: 12,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 18),
               title: Text(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontSize: 14.5),
+                style: TextStyle(fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontSize: 16),
               ),
-              subtitle: c.title.isEmpty || c.preview.isEmpty
-                  ? null
-                  : Text(
-                      c.preview,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
-                    ),
               onTap: () {
                 app.openConversation(c.id);
                 _close();
@@ -227,13 +364,12 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final style = Theme.of(context).textTheme.labelMedium
-        ?.copyWith(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w700);
+    final style = Theme.of(context).textTheme.titleSmall?.copyWith(color: scheme.primary, fontWeight: FontWeight.w700);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+      padding: const EdgeInsets.fromLTRB(18, 18, 14, 6),
       child: Row(
         children: [
-          if (icon != null) ...[Icon(icon, size: 13, color: scheme.onSurfaceVariant), const SizedBox(width: 4)],
+          if (icon != null) ...[Icon(icon, size: 14, color: scheme.primary), const SizedBox(width: 5)],
           Text(label, style: style),
         ],
       ),
@@ -253,56 +389,35 @@ class _AssistantHeader extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final a = s.currentAssistant;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: Pressable(
-              onTap: () => _pick(context, store, app),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerLowest,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: scheme.outlineVariant),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 2),
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          key: const ValueKey('sidebar-current-assistant'),
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => _pick(context, store, app),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+            child: Row(
+              children: [
+                Icon(Icons.sentiment_satisfied_alt_outlined, size: 24, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    a.name.isEmpty ? 'Mew' : a.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    AvatarView(value: a.avatar, fallback: a.name, size: 38),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            a.name.isEmpty ? 'Mew' : a.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          Text(
-                            t('切换助手', 'Switch assistant'),
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.unfold_more_rounded, size: 18, color: scheme.onSurfaceVariant),
-                  ],
-                ),
-              ),
+                AvatarView(value: a.avatar, fallback: a.name, size: 38),
+                const SizedBox(width: 8),
+                Icon(Icons.unfold_more_rounded, size: 18, color: scheme.onSurfaceVariant),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            tooltip: t('新对话', 'New chat'),
-            onPressed: () {
-              app.newChat();
-              Navigator.of(context).maybePop();
-            },
-            icon: const Icon(Icons.add_rounded),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -349,52 +464,6 @@ class _AssistantHeader extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _NavBar extends StatelessWidget {
-  const _NavBar({required this.onNavigate});
-  final ValueChanged<String> onNavigate;
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = [
-      (Icons.translate_rounded, t('翻译', 'Translate'), '/translator'),
-      (Icons.brush_outlined, t('绘图', 'Images'), '/imagegen'),
-      (Icons.favorite_border_rounded, t('收藏', 'Favorites'), '/favorites'),
-      (Icons.manage_search_rounded, t('搜索', 'Search'), '/search'),
-      (Icons.settings_outlined, t('设置', 'Settings'), '/settings'),
-    ];
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        child: Row(
-          children: [
-            for (final e in entries)
-              Expanded(
-                child: Tooltip(
-                  message: e.$2,
-                  child: Pressable(
-                    onTap: () => onNavigate(e.$3),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(e.$1, size: 22),
-                          const SizedBox(height: 3),
-                          Text(e.$2, style: Theme.of(context).textTheme.labelSmall, maxLines: 1),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }

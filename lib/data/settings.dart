@@ -376,7 +376,14 @@ class AppSettings {
 
   factory AppSettings.fromJson(Map<String, dynamic> j) {
     final assistants = mapList(j['assistants'], Assistant.fromJson);
-    final list = assistants.isEmpty ? defaultAssistants() : assistants;
+    final loadedAssistants = assistants.isEmpty ? defaultAssistants() : assistants;
+    final list = [
+      for (final assistant in loadedAssistants)
+        if (assistant.id == defaultAssistantId && assistant.avatar == '🐱')
+          assistant.copyWith(avatar: defaultAssistantAvatar)
+        else
+          assistant,
+    ];
     final cur = asStr(j['currentAssistantId']);
     return AppSettings(
       themeMode: enumByName(ThemeModePref.values, j['themeMode'], ThemeModePref.system),

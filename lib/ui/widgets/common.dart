@@ -310,7 +310,15 @@ class AvatarView extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     Widget inner;
-    if (value.isNotEmpty && _isImage) {
+    if (value.startsWith('asset:')) {
+      inner = Image.asset(
+        value.substring('asset:'.length),
+        fit: BoxFit.cover,
+        width: size,
+        height: size,
+        errorBuilder: (context, error, stack) => _mono(context),
+      );
+    } else if (value.isNotEmpty && _isImage) {
       inner = Image.file(
         File(AppPaths.resolve(value)),
         fit: BoxFit.cover,
