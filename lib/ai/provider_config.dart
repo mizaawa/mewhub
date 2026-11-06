@@ -1,7 +1,14 @@
 import '../core/util.dart';
 
 /// Wire protocol spoken by a provider.
-enum ProviderKind { openai, anthropic, google }
+enum ProviderKind {
+  openai('https://api.openai.com/v1'),
+  anthropic('https://api.anthropic.com/v1'),
+  google('https://generativelanguage.googleapis.com/v1beta');
+
+  const ProviderKind(this.defaultBaseUrl);
+  final String defaultBaseUrl;
+}
 
 enum ModelType { chat, image, embedding }
 

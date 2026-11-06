@@ -13,6 +13,8 @@ import '../widgets/provider_logo.dart';
 import 'provider_detail_page.dart';
 import 'qr_pages.dart';
 
+enum _ProviderImportMethod { apiKey }
+
 class ProvidersPage extends StatelessWidget {
   const ProvidersPage({super.key});
 
@@ -85,7 +87,7 @@ class ProvidersPage extends StatelessWidget {
   }
 
   Future<void> _add(BuildContext context, SettingsStore store) async {
-    final kind = await showModalBottomSheet<(ProviderKind, bool)>(
+    final method = await showModalBottomSheet<_ProviderImportMethod>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
@@ -93,53 +95,28 @@ class ProvidersPage extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(t('选择接口协议', 'Choose API protocol'), style: Theme.of(ctx).textTheme.titleMedium),
+              child: Text(t('选择导入方式', 'Choose import method'), style: Theme.of(ctx).textTheme.titleMedium),
             ),
             ListTile(
-              leading: const IconBadge(Icons.chat_outlined),
-              title: const Text('OpenAI Chat Completions'),
-              subtitle: Text(t('兼容绝大多数第三方 API / 中转', 'Works with most third-party gateways')),
-              onTap: () => Navigator.pop(ctx, (ProviderKind.openai, false)),
-            ),
-            ListTile(
-              leading: const IconBadge(Icons.auto_awesome_motion_rounded),
-              title: const Text('OpenAI Responses'),
-              subtitle: Text(t('新版接口，支持推理摘要与内置搜索', 'Newer API with reasoning summaries & web search')),
-              onTap: () => Navigator.pop(ctx, (ProviderKind.openai, true)),
-            ),
-            ListTile(
-              leading: const IconBadge(Icons.spa_outlined),
-              title: const Text('Anthropic Messages'),
-              subtitle: Text(t('Claude 官方协议，支持思考与缓存', 'Claude protocol with thinking & caching')),
-              onTap: () => Navigator.pop(ctx, (ProviderKind.anthropic, false)),
-            ),
-            ListTile(
-              leading: const IconBadge(Icons.diamond_outlined),
-              title: const Text('Google Gemini'),
-              subtitle: Text(t('Gemini 官方接口', 'Gemini API')),
-              onTap: () => Navigator.pop(ctx, (ProviderKind.google, false)),
+              leading: const IconBadge(Icons.key_rounded),
+              title: Text(t('从 API KEY 导入', 'Import from API key')),
+              subtitle: Text(t('填写 API Key 和接口地址', 'Enter an API key and base URL')),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.pop(ctx, _ProviderImportMethod.apiKey),
             ),
             const SizedBox(height: 8),
           ],
         ),
       ),
     );
-    if (kind == null || !context.mounted) return;
-    final (k, responses) = kind;
-    final p = ProviderConfig(
-      kind: k,
-      name: switch (k) {
-        ProviderKind.openai => responses ? 'OpenAI Responses' : t('自定义 OpenAI', 'Custom OpenAI'),
-        ProviderKind.anthropic => 'Anthropic',
-        ProviderKind.google => 'Gemini',
-      },
-      baseUrl: switch (k) {
-        ProviderKind.openai => 'https://api.openai.com/v1',
-        ProviderKind.anthropic => 'https://api.anthropic.com/v1',
-        ProviderKind.google => 'https://generativelanguage.googleapis.com/v1beta',
-      },
-      useResponsesApi: responses,
-    );
+    if (method == null || !context.mounted) return;
+    final p = switch (method) {
+      _ProviderImportMethod.apiKey => ProviderConfig(
+        kind: ProviderKind.openai,
+        name: t('自定义供应商', 'Custom provider'),
+        baseUrl: ProviderKind.openai.defaultBaseUrl,
+      ),
+    };
     store.upsertProvider(p);
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProviderDetailPage(providerId: p.id)));
   }

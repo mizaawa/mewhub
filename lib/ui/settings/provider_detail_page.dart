@@ -70,6 +70,20 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     ),
   );
 
+  void _changeProtocol(String? value) {
+    if (value == null) return;
+    final kind = switch (value) {
+      'anthropic' => ProviderKind.anthropic,
+      'google' => ProviderKind.google,
+      _ => ProviderKind.openai,
+    };
+    final currentUrl = _url.text.trim().replaceAll(RegExp(r'/+$'), '');
+    if (kind != _p.kind && currentUrl == _p.kind.defaultBaseUrl) {
+      _url.text = kind.defaultBaseUrl;
+    }
+    _save(_p.copyWith(kind: kind, useResponsesApi: value == 'responses', baseUrl: _url.text.trim()));
+  }
+
   Future<void> _fetchModels() async {
     _saveFields();
     setState(() => _fetching = true);
@@ -287,12 +301,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                       DropdownMenuItem(value: 'anthropic', child: Text('Anthropic')),
                       DropdownMenuItem(value: 'google', child: Text('Gemini')),
                     ],
-                    onChanged: (v) => _save(switch (v) {
-                      'responses' => _p.copyWith(kind: ProviderKind.openai, useResponsesApi: true),
-                      'anthropic' => _p.copyWith(kind: ProviderKind.anthropic),
-                      'google' => _p.copyWith(kind: ProviderKind.google),
-                      _ => _p.copyWith(kind: ProviderKind.openai, useResponsesApi: false),
-                    }),
+                    onChanged: _changeProtocol,
                   ),
                 ),
                 if (isOpenAi && !_p.useResponsesApi)
