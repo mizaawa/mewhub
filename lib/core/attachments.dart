@@ -73,6 +73,14 @@ class Attachments {
 
   static Future<String> storeBytes(Uint8List bytes, String ext) => _store(bytes, ext);
 
+  static Future<void> deleteStored(String stored) async {
+    if (stored.startsWith('http://') || stored.startsWith('https://') || stored.startsWith('data:')) return;
+    final path = p.normalize(p.absolute(AppPaths.resolve(stored)));
+    if (!p.isWithin(p.normalize(p.absolute(AppPaths.files.path)), path)) return;
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+  }
+
   static Future<String?> pickAvatar() async {
     final f = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 512, maxHeight: 512, imageQuality: 90);
     if (f == null) return null;

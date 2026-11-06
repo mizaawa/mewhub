@@ -13,6 +13,7 @@ import '../../data/settings.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
 import '../widgets/motion.dart';
+import 'image_editor.dart';
 
 /// Chat input area. Holds draft text + attachments and reports a send.
 class Composer extends StatefulWidget {
@@ -128,14 +129,50 @@ class ComposerState extends State<Composer> {
   }
 
   Future<void> _pick(Future<List<Part>> Function() picker) async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       final parts = await picker();
-      if (parts.isNotEmpty) setState(() => _attachments.addAll(parts));
+      if (mounted && parts.isNotEmpty) setState(() => _attachments.addAll(parts));
     } catch (e) {
       if (mounted) toast(context, '$e', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _takePhotoAndEdit() async {
+    if (_busy) return;
+    _focus.unfocus();
+    setState(() {
+      _busy = true;
+      _toolsOpen = false;
+    });
+    ImagePart? captured;
+    try {
+      final photo = await Attachments.takePhoto();
+      captured = photo;
+      if (photo == null || !mounted) return;
+      final edited = await Navigator.of(context)
+          .push<String>(MaterialPageRoute(builder: (_) => ImageEditorPage(imageUrl: photo.url)));
+      if (edited != null) {
+        if (mounted) {
+          setState(() => _attachments.add(ImagePart(edited)));
+        } else {
+          await Attachments.deleteStored(edited);
+        }
+      }
+    } catch (e) {
+      if (mounted) toast(context, '$e', error: true);
+    } finally {
+      try {
+        final photo = captured;
+        if (photo != null) await Attachments.deleteStored(photo.url);
+      } catch (e) {
+        debugPrint('Unable to remove temporary photo: $e');
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
     }
   }
 
@@ -324,9 +361,10 @@ class ComposerState extends State<Composer> {
                   child: Row(
                     children: [
                       _RoundIcon(
-                        icon: _toolsOpen ? Icons.close_rounded : Icons.add_rounded,
+                        icon: Icons.add_rounded,
                         onTap: () => setState(() => _toolsOpen = !_toolsOpen),
                         rotate: _toolsOpen,
+                        tooltip: _toolsOpen ? t('收起工具', 'Close tools') : t('展开工具', 'Open tools'),
                       ),
                       const SizedBox(width: 2),
                       _RoundIcon(
@@ -443,10 +481,7 @@ class ComposerState extends State<Composer> {
         icon: Icons.photo_camera_outlined,
         label: t('拍照', 'Camera'),
         enabled: widget.supportsVision,
-        onTap: () => _pick(() async {
-          final p = await Attachments.takePhoto();
-          return p == null ? <Part>[] : <Part>[p];
-        }),
+        onTap: _takePhotoAndEdit,
       ),
       _ToolTile(icon: Icons.attach_file_rounded, label: t('文件', 'Files'), onTap: () => _pick(Attachments.pickFiles)),
       _ToolTile(icon: Icons.compress_rounded, label: t('压缩上下文', 'Compress'), onTap: widget.onCompress),
