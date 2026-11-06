@@ -436,7 +436,7 @@ class Assistant {
     maxTokens: asIntOrNull(j['maxTokens']),
     contextMessages: asInt(j['contextMessages']),
     stream: asBool(j['stream'], true),
-    reasoning: enumByName(ReasoningLevel.values, j['reasoning'], ReasoningLevel.auto),
+    reasoning: ReasoningLevel.fromName(j['reasoning']),
     messageTemplate: asStr(j['messageTemplate'], '{{message}}'),
     presetMessages: mapList(j['presetMessages'], ChatMessage.fromJson),
     regexes: mapList(j['regexes'], AssistantRegex.fromJson),

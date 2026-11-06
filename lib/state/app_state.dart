@@ -22,7 +22,14 @@ class AppState extends ChangeNotifier {
   List<ConversationSummary> conversations = [];
   Set<String> favoriteIds = {};
   ChatController? _chat;
-  ChatController get chat => _chat ??= _newController(Conversation(assistantId: store.value.currentAssistantId));
+  ChatController get chat =>
+      _chat ??= _newController(Conversation(assistantId: store.value.currentAssistantId, modelId: _lastModelId()));
+
+  /// The model picked last, if it still exists, so new chats carry it over.
+  String? _lastModelId() {
+    final s = store.value;
+    return s.findModel(s.lastChatModelId) == null ? null : s.lastChatModelId;
+  }
 
   /// Bumped whenever the conversation list changes (drawer listens to it).
   final ValueNotifier<int> listRevision = ValueNotifier(0);
@@ -50,6 +57,7 @@ class AppState extends ChangeNotifier {
     final greeting = a.greeting.trim();
     final conv = Conversation(
       assistantId: a.id,
+      modelId: _lastModelId(),
       nodes: greeting.isEmpty
           ? const []
           : [

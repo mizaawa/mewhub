@@ -23,6 +23,7 @@ class Composer extends StatefulWidget {
     required this.onSend,
     required this.onStop,
     required this.modelLabel,
+    this.providerLabel = '',
     required this.onPickModel,
     required this.searchEnabled,
     required this.onToggleSearch,
@@ -42,6 +43,7 @@ class Composer extends StatefulWidget {
   final Future<void> Function(List<Part> parts) onSend;
   final VoidCallback onStop;
   final String modelLabel;
+  final String providerLabel;
   final VoidCallback onPickModel;
   final bool searchEnabled;
   final VoidCallback onToggleSearch;
@@ -186,39 +188,7 @@ class ComposerState extends State<Composer> {
   void _reasoningSheet() {
     showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) {
-        String label(ReasoningLevel l) => switch (l) {
-          ReasoningLevel.off => t('关闭', 'Off'),
-          ReasoningLevel.auto => t('自动', 'Auto'),
-          ReasoningLevel.low => t('轻度', 'Low'),
-          ReasoningLevel.medium => t('中等', 'Medium'),
-          ReasoningLevel.high => t('深度', 'High'),
-          ReasoningLevel.max => t('极限', 'Max'),
-        };
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Text(t('思考强度', 'Reasoning effort'), style: Theme.of(ctx).textTheme.titleMedium),
-              ),
-              for (final l in ReasoningLevel.values)
-                ListTile(
-                  leading: Icon(
-                    l == widget.reasoning ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
-                  ),
-                  title: Text(label(l)),
-                  subtitle: l.budget > 0 ? Text('≈ ${l.budget} tokens') : null,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    widget.onReasoning(l);
-                  },
-                ),
-            ],
-          ),
-        );
-      },
+      builder: (ctx) => ReasoningSheet(initial: widget.reasoning, onChanged: widget.onReasoning),
     );
   }
 
@@ -249,6 +219,27 @@ class ComposerState extends State<Composer> {
             duration: const Duration(milliseconds: 280),
             curve: Curves.easeOutCubic,
             child: _toolsOpen ? _toolsPanel(context) : const SizedBox(width: double.infinity),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _ModelChip(
+                      model: widget.modelLabel,
+                      provider: widget.providerLabel,
+                      onTap: widget.onPickModel,
+                    ),
+                  ),
+                ),
+                if (widget.supportsReasoning) ...[
+                  const SizedBox(width: 8),
+                  _ReasoningChip(level: widget.reasoning, onTap: _reasoningSheet),
+                ],
+              ],
+            ),
           ),
           Container(
             decoration: BoxDecoration(
@@ -294,21 +285,12 @@ class ComposerState extends State<Composer> {
                         rotate: _toolsOpen,
                       ),
                       const SizedBox(width: 2),
-                      _Pill(icon: Icons.auto_awesome_rounded, label: widget.modelLabel, onTap: widget.onPickModel),
-                      const SizedBox(width: 4),
                       _RoundIcon(
                         icon: Icons.travel_explore_rounded,
                         active: widget.searchEnabled,
                         onTap: widget.onToggleSearch,
                         tooltip: t('联网搜索', 'Web search'),
                       ),
-                      if (widget.supportsReasoning)
-                        _RoundIcon(
-                          icon: Icons.psychology_alt_rounded,
-                          active: widget.reasoning != ReasoningLevel.off,
-                          onTap: _reasoningSheet,
-                          tooltip: t('思考强度', 'Reasoning'),
-                        ),
                       const Spacer(),
                       if (!widget.generating && _text.text.isEmpty && _attachments.isEmpty)
                         _RoundIcon(
@@ -464,7 +446,7 @@ class ComposerState extends State<Composer> {
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ActionChip(
-                        avatar: const Icon(Icons.bolt_rounded, size: 16),
+                        avatar: const Icon(Icons.short_text_rounded, size: 16),
                         label: Text(q.title.isEmpty ? q.content : q.title, overflow: TextOverflow.ellipsis),
                         onPressed: () => widget.onQuickMessage(q.content),
                       ),
@@ -517,42 +499,239 @@ class _RoundIcon extends StatelessWidget {
   }
 }
 
-class _Pill extends StatelessWidget {
-  const _Pill({required this.icon, required this.label, required this.onTap});
-  final IconData icon;
-  final String label;
+/// Current model, shown on its own row above the input so long names fit.
+/// Very long ids scale down a little before they are ellipsized.
+class _ModelChip extends StatelessWidget {
+  const _ModelChip({required this.model, required this.provider, required this.onTap});
+  final String model;
+  final String provider;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Flexible(
+    final tt = Theme.of(context).textTheme;
+    return Pressable(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(6, 5, 8, 5),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLowest.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AvatarView(value: '', fallback: model, size: 22),
+            const SizedBox(width: 7),
+            Flexible(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: LayoutBuilder(
+                  key: ValueKey('$model|$provider'),
+                  builder: (context, box) {
+                    final style = tt.labelLarge?.copyWith(fontWeight: FontWeight.w600, color: scheme.onSurface);
+                    final painter = TextPainter(
+                      text: TextSpan(text: model, style: style),
+                      maxLines: 1,
+                      textDirection: TextDirection.ltr,
+                      textScaler: MediaQuery.textScalerOf(context),
+                    )..layout();
+                    final shrink = painter.width > box.maxWidth;
+                    return Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(text: model, style: shrink ? style?.copyWith(fontSize: 12.5) : style),
+                          if (provider.isNotEmpty && !shrink)
+                            TextSpan(
+                              text: '  $provider',
+                              style: tt.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.unfold_more_rounded, size: 16, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReasoningChip extends StatelessWidget {
+  const _ReasoningChip({required this.level, required this.onTap});
+  final ReasoningLevel level;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: t('思考强度', 'Reasoning effort'),
       child: Pressable(
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 170),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(13)),
+          padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
+          decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(14)),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 15, color: scheme.primary),
-              const SizedBox(width: 5),
-              Flexible(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  child: Text(
-                    label,
-                    key: ValueKey(label),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSecondaryContainer),
-                  ),
+              Icon(Icons.psychology_alt_rounded, size: 16, color: scheme.primary),
+              const SizedBox(width: 4),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: Text(
+                  reasoningLabel(level),
+                  key: ValueKey(level),
+                  style: Theme.of(context).textTheme.labelMedium
+                      ?.copyWith(color: scheme.onSecondaryContainer, fontWeight: FontWeight.w600),
                 ),
               ),
-              Icon(Icons.expand_more_rounded, size: 15, color: scheme.onSecondaryContainer),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+String reasoningLabel(ReasoningLevel l) => switch (l) {
+  ReasoningLevel.off => t('关闭', 'Off'),
+  ReasoningLevel.auto => t('自动', 'Auto'),
+  ReasoningLevel.low => t('轻度', 'Low'),
+  ReasoningLevel.medium => t('中等', 'Medium'),
+  ReasoningLevel.high => t('深度', 'High'),
+  ReasoningLevel.xhigh => t('超深', 'XHigh'),
+  ReasoningLevel.max => t('极限', 'Max'),
+};
+
+String _reasoningHint(ReasoningLevel l) => switch (l) {
+  ReasoningLevel.off || ReasoningLevel.auto => t('交给模型自己决定想多久', 'Let the model decide how long to think'),
+  ReasoningLevel.low => t('快速回答，少量思考', 'Quick answers, light thinking'),
+  ReasoningLevel.medium => t('速度和质量的平衡', 'Balanced speed and quality'),
+  ReasoningLevel.high => t('复杂问题，认真推理', 'Careful reasoning for hard problems'),
+  ReasoningLevel.xhigh => t('长任务、难题，耗时更久', 'Long, hard tasks; takes longer'),
+  ReasoningLevel.max => t('不计成本的最强推理', 'Strongest reasoning, no token limit'),
+};
+
+/// Six-stop slider for the reasoning level. Applies on every change so the
+/// chip under the sheet updates live.
+class ReasoningSheet extends StatefulWidget {
+  const ReasoningSheet({super.key, required this.initial, required this.onChanged});
+  final ReasoningLevel initial;
+  final ValueChanged<ReasoningLevel> onChanged;
+
+  @override
+  State<ReasoningSheet> createState() => _ReasoningSheetState();
+}
+
+class _ReasoningSheetState extends State<ReasoningSheet> {
+  static const _levels = ReasoningLevel.selectable;
+  late int _i = _levels.indexOf(widget.initial).clamp(0, _levels.length - 1);
+
+  void _set(int i) {
+    if (i == _i) return;
+    HapticFeedback.selectionClick();
+    setState(() => _i = i);
+    widget.onChanged(_levels[i]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final level = _levels[_i];
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text(t('思考强度', 'Reasoning effort'), style: tt.titleMedium),
+                const Spacer(),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+                  child: Text(
+                    reasoningLabel(level),
+                    key: ValueKey(level),
+                    style: tt.titleMedium?.copyWith(color: scheme.primary, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              layoutBuilder: (current, previous) =>
+                  Stack(alignment: Alignment.centerLeft, children: [...previous, ?current]),
+              child: Text(
+                _reasoningHint(level),
+                key: ValueKey(level),
+                style: tt.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Track ends sit at the centre of the first and last label cell.
+            LayoutBuilder(
+              builder: (context, box) => SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 6,
+                  showValueIndicator: ShowValueIndicator.never,
+                  activeTickMarkColor: scheme.onPrimary.withValues(alpha: 0.7),
+                  inactiveTickMarkColor: scheme.primary.withValues(alpha: 0.35),
+                ),
+                child: Slider(
+                  value: _i.toDouble(),
+                  min: 0,
+                  max: (_levels.length - 1).toDouble(),
+                  divisions: _levels.length - 1,
+                  padding: EdgeInsets.symmetric(horizontal: box.maxWidth / _levels.length / 2, vertical: 12),
+                  onChanged: (v) => _set(v.round()),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                for (var i = 0; i < _levels.length; i++)
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _set(i),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            _levels[i].effort,
+                            style: tt.labelMedium?.copyWith(
+                              color: i == _i ? scheme.primary : scheme.onSurfaceVariant,
+                              fontWeight: i == _i ? FontWeight.w800 : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              t('模型不支持的档位会自动降到它支持的最高档', 'Levels a model does not support fall back to its highest one'),
+              style: tt.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
         ),
       ),
     );

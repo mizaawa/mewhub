@@ -69,7 +69,7 @@ class DefaultModelsPage extends StatelessWidget {
                 t('对话模型', 'Chat model'),
                 t('未设置', 'Not set'),
                 s.chatModelId,
-                (v) => s.copyWith(chatModelId: v),
+                (v) => s.copyWith(chatModelId: v, lastChatModelId: null),
                 allowNone: false,
               ),
               row(

@@ -778,7 +778,7 @@ class StatsPage extends StatelessWidget {
                       subtitle: Text(
                         '${asInt(m['requests'])} ${t('次请求', 'requests')}'
                         ' · ↑${formatTokens(asInt(m['input']))} ↓${formatTokens(asInt(m['output']))}'
-                        '${asInt(m['cached']) > 0 ? ' · ⚡${formatTokens(asInt(m['cached']))}' : ''}',
+                        '${asInt(m['cached']) > 0 ? ' · ${t('缓存', 'cache')} ${formatTokens(asInt(m['cached']))}' : ''}',
                       ),
                     ),
                 ],

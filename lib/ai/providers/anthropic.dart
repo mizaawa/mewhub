@@ -196,7 +196,7 @@ class AnthropicProvider extends AiProvider {
       } else {
         body['thinking'] = {'type': 'adaptive', 'display': 'summarized'};
         if (p.reasoning != ReasoningLevel.auto) {
-          body['output_config'] = {'effort': p.reasoning.effort};
+          body['output_config'] = {'effort': anthropicEffort(p.model.modelId, p.reasoning)};
         }
       }
     }

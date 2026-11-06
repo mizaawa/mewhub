@@ -87,7 +87,7 @@ class ProvidersPage extends StatelessWidget {
               child: Text(t('选择接口协议', 'Choose API protocol'), style: Theme.of(ctx).textTheme.titleMedium),
             ),
             ListTile(
-              leading: const IconBadge(Icons.bolt_rounded),
+              leading: const IconBadge(Icons.chat_outlined),
               title: const Text('OpenAI Chat Completions'),
               subtitle: Text(t('兼容绝大多数第三方 API / 中转', 'Works with most third-party gateways')),
               onTap: () => Navigator.pop(ctx, (ProviderKind.openai, false)),

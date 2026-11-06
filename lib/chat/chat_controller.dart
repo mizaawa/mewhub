@@ -61,6 +61,9 @@ class ChatController extends ChangeNotifier {
   AppSettings get settings => store.value;
   Assistant get assistant => settings.assistantById(_conv.assistantId) ?? settings.currentAssistant;
 
+  /// The level last picked in any chat wins over the assistant's stored one.
+  ReasoningLevel get reasoning => settings.lastReasoning ?? assistant.reasoning;
+
   ({ProviderConfig provider, ModelConfig model})? get resolvedModel {
     final s = settings;
     return s.findModel(_conv.modelId) ?? s.findModel(assistant.chatModelId) ?? s.findModel(s.chatModelId);
@@ -301,7 +304,7 @@ class ChatController extends ChangeNotifier {
           temperature: a.temperature,
           topP: a.topP,
           maxTokens: a.maxTokens,
-          reasoning: a.reasoning,
+          reasoning: reasoning,
           tools: tools.map((e) => e.spec).toList(),
           extraHeaders: a.headers,
           extraBodies: a.bodies,

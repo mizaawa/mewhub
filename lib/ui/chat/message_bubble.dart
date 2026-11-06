@@ -334,7 +334,8 @@ class MessageBubble extends StatelessWidget {
         const SizedBox(width: 6),
         Flexible(
           child: Text(
-            '↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)}${usage.cached > 0 ? ' ⚡${formatTokens(usage.cached)}' : ''}',
+            '↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)}'
+            '${usage.cached > 0 ? ' · ${t('缓存', 'cache')} ${formatTokens(usage.cached)}' : ''}',
             style: mute,
             overflow: TextOverflow.ellipsis,
           ),

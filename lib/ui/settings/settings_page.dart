@@ -158,7 +158,7 @@ class SettingsPage extends StatelessWidget {
                 title: t('扩展', 'Extensions'),
                 children: [
                   nav(Icons.menu_book_outlined, t('世界书 / 模式', 'Lorebooks & modes'), '/settings/prompts'),
-                  nav(Icons.bolt_outlined, t('快捷短语', 'Quick messages'), '/settings/quick'),
+                  nav(Icons.short_text_rounded, t('快捷短语', 'Quick messages'), '/settings/quick'),
                   nav(Icons.psychology_outlined, t('记忆', 'Memories'), '/settings/memory'),
                 ],
               ),

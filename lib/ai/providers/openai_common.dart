@@ -41,7 +41,8 @@ void applyChatReasoning(Map<String, dynamic> body, String host, GenerationParams
       body['reasoning'] = switch (level) {
         ReasoningLevel.off => {'effort': 'none'},
         ReasoningLevel.auto => {'enabled': true},
-        _ => {'effort': level == ReasoningLevel.max ? 'high' : level.effort},
+        // OpenRouter maps an effort to the nearest level the model supports.
+        _ => {'effort': level.effort},
       };
     case 'api.deepseek.com':
       body['thinking'] = onOff;
@@ -60,7 +61,9 @@ void applyChatReasoning(Map<String, dynamic> body, String host, GenerationParams
       if (level.enabled && level != ReasoningLevel.auto) body['thinking_budget'] = level.budget;
     case 'generativelanguage.googleapis.com':
       if (level != ReasoningLevel.auto) {
-        body['reasoning_effort'] = level.enabled ? (level == ReasoningLevel.max ? 'high' : level.effort) : 'none';
+        body['reasoning_effort'] = level.enabled
+            ? (level.index > ReasoningLevel.high.index ? 'high' : level.effort)
+            : 'none';
       }
     case 'api.mistral.ai':
       break;
@@ -68,8 +71,7 @@ void applyChatReasoning(Map<String, dynamic> body, String host, GenerationParams
       if (level != ReasoningLevel.auto) {
         body['reasoning_effort'] = switch (level) {
           ReasoningLevel.off => isOpenAiReasoningModel(p.model.modelId) ? 'minimal' : 'none',
-          ReasoningLevel.max => 'high',
-          _ => level.effort,
+          _ => openAiEffort(p.model.modelId, level),
         };
       }
   }

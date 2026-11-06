@@ -611,7 +611,7 @@ class QuickMessagesPage extends StatelessWidget {
       floatingActionButton: FloatingActionButton(onPressed: () => edit(null), child: const Icon(Icons.add_rounded)),
       body: list.isEmpty
           ? EmptyState(
-              icon: Icons.bolt_outlined,
+              icon: Icons.short_text_rounded,
               title: t('还没有快捷短语', 'No quick messages'),
               subtitle: t('常用的提问可以保存在这里，在输入框「+」中一键填入', 'Save frequent prompts and insert them from the composer "+"'),
             )
@@ -622,7 +622,7 @@ class QuickMessagesPage extends StatelessWidget {
                   EntranceFx(
                     index: i,
                     child: ListTile(
-                      leading: const IconBadge(Icons.bolt_rounded),
+                      leading: const IconBadge(Icons.short_text_rounded),
                       title: Text(list[i].title.isEmpty ? list[i].content : list[i].title, maxLines: 1),
                       subtitle: Text(list[i].content, maxLines: 2, overflow: TextOverflow.ellipsis),
                       onTap: () => edit(list[i]),

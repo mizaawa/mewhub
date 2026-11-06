@@ -263,9 +263,13 @@ class _ChatPageState extends State<ChatPage> {
                   },
                   onStop: c.stop,
                   modelLabel: model?.displayName ?? t('选择模型', 'Pick model'),
+                  providerLabel: resolved?.provider.name ?? '',
                   onPickModel: () async {
                     final id = await pickModel(context, selected: model?.id);
-                    if (id != null && id.isNotEmpty) await c.setModel(id);
+                    if (id == null || id.isEmpty) return;
+                    await c.setModel(id);
+                    // New chats start with the model picked last.
+                    store.update((s) => s.copyWith(lastChatModelId: id));
                   },
                   searchEnabled: a.enableWebSearch,
                   onToggleSearch: () {
@@ -273,8 +277,13 @@ class _ChatPageState extends State<ChatPage> {
                     store.upsertAssistant(a.copyWith(enableWebSearch: on));
                     toast(context, on ? t('联网搜索已开启', 'Web search on') : t('联网搜索已关闭', 'Web search off'));
                   },
-                  reasoning: a.reasoning,
-                  onReasoning: (l) => store.upsertAssistant(a.copyWith(reasoning: l)),
+                  reasoning: c.reasoning,
+                  onReasoning: (l) => store.update(
+                    (s) => s.copyWith(
+                      lastReasoning: l,
+                      assistants: [for (final x in s.assistants) x.id == a.id ? x.copyWith(reasoning: l) : x],
+                    ),
+                  ),
                   supportsReasoning: model?.reasoning ?? false,
                   supportsVision: model?.vision ?? true,
                   activeModes: {...a.modeIds, ...c.modeIds},

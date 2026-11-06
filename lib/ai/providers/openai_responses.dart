@@ -168,8 +168,7 @@ class OpenAiResponsesProvider extends AiProvider with OpenAiCommon {
       if (p.reasoning != ReasoningLevel.auto) {
         r['effort'] = switch (p.reasoning) {
           ReasoningLevel.off => 'minimal',
-          ReasoningLevel.max => 'high',
-          _ => p.reasoning.effort,
+          _ => openAiEffort(p.model.modelId, p.reasoning),
         };
       }
       if (r.isNotEmpty) body['reasoning'] = r;

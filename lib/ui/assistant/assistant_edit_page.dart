@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../ai/message.dart';
-import '../../ai/provider_config.dart';
 import '../../chat/prompt_builder.dart';
 import '../../core/attachments.dart';
 import '../../core/i18n.dart';
 import '../../data/assistant.dart';
 import '../../state/settings_store.dart';
+import '../chat/composer.dart';
 import '../chat/model_picker.dart';
 import '../widgets/common.dart';
 import '../widgets/motion.dart';
@@ -208,6 +208,8 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
                 final id = await pickModel(context, selected: _a.chatModelId, allowNone: true);
                 if (id == null) return;
                 _save(_a.copyWith(chatModelId: id.isEmpty ? null : id));
+                // An explicit assistant model wins over the last one picked in chat.
+                _store.update((s) => s.copyWith(lastChatModelId: null));
               },
             ),
           ],
@@ -330,14 +332,6 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
 
   Widget _params(BuildContext context) {
     String fmt(double? v) => v == null ? t('默认', 'Default') : v.toStringAsFixed(2);
-    String lvl(ReasoningLevel l) => switch (l) {
-      ReasoningLevel.off => t('关闭', 'Off'),
-      ReasoningLevel.auto => t('自动', 'Auto'),
-      ReasoningLevel.low => t('轻度', 'Low'),
-      ReasoningLevel.medium => t('中等', 'Medium'),
-      ReasoningLevel.high => t('深度', 'High'),
-      ReasoningLevel.max => t('极限', 'Max'),
-    };
     return ListView(
       padding: const EdgeInsets.only(bottom: 40),
       children: [
@@ -375,12 +369,17 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
             ListTile(
               leading: const IconBadge(Icons.psychology_alt_rounded),
               title: Text(t('思考强度', 'Reasoning effort')),
-              trailing: DropdownButton<ReasoningLevel>(
-                value: _a.reasoning,
-                underline: const SizedBox.shrink(),
-                borderRadius: BorderRadius.circular(14),
-                items: [for (final l in ReasoningLevel.values) DropdownMenuItem(value: l, child: Text(lvl(l)))],
-                onChanged: (v) => _save(_a.copyWith(reasoning: v)),
+              subtitle: Text(reasoningLabel(_a.reasoning)),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => showModalBottomSheet<void>(
+                context: context,
+                builder: (ctx) => ReasoningSheet(
+                  initial: _a.reasoning,
+                  onChanged: (v) {
+                    _save(_a.copyWith(reasoning: v));
+                    _store.update((s) => s.copyWith(lastReasoning: v));
+                  },
+                ),
               ),
             ),
             ListTile(

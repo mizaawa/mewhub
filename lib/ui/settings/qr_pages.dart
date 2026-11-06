@@ -33,7 +33,9 @@ class _QrScanPageState extends State<QrScanPage> {
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         title: Text(t('扫描配置二维码', 'Scan config QR')),
-        actions: [IconButton(icon: const Icon(Icons.flash_on_rounded), onPressed: () => _controller.toggleTorch())],
+        actions: [
+          IconButton(icon: const Icon(Icons.flashlight_on_rounded), onPressed: () => _controller.toggleTorch()),
+        ],
       ),
       body: Stack(
         children: [

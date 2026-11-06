@@ -218,6 +218,8 @@ class AppSettings {
     this.translateTarget = 'zh-CN',
     this.onboarded = false,
     this.lastBackupAt,
+    this.lastChatModelId,
+    this.lastReasoning,
   });
 
   final ThemeModePref themeMode;
@@ -255,6 +257,11 @@ class AppSettings {
   final String translateTarget;
   final bool onboarded;
   final DateTime? lastBackupAt;
+
+  /// Model and reasoning level last picked in a chat. New chats start with
+  /// them; picking a default in settings or on an assistant clears them.
+  final String? lastChatModelId;
+  final ReasoningLevel? lastReasoning;
 
   Assistant get currentAssistant =>
       assistants.firstWhere((a) => a.id == currentAssistantId, orElse: () => assistants.first);
@@ -325,6 +332,8 @@ class AppSettings {
     String? translateTarget,
     bool? onboarded,
     DateTime? lastBackupAt,
+    Object? lastChatModelId = _keep,
+    Object? lastReasoning = _keep,
   }) => AppSettings(
     themeMode: themeMode ?? this.themeMode,
     language: language ?? this.language,
@@ -361,6 +370,8 @@ class AppSettings {
     translateTarget: translateTarget ?? this.translateTarget,
     onboarded: onboarded ?? this.onboarded,
     lastBackupAt: lastBackupAt ?? this.lastBackupAt,
+    lastChatModelId: identical(lastChatModelId, _keep) ? this.lastChatModelId : lastChatModelId as String?,
+    lastReasoning: identical(lastReasoning, _keep) ? this.lastReasoning : lastReasoning as ReasoningLevel?,
   );
 
   factory AppSettings.fromJson(Map<String, dynamic> j) {
@@ -405,6 +416,8 @@ class AppSettings {
       translateTarget: asStr(j['translateTarget'], 'zh-CN'),
       onboarded: asBool(j['onboarded']),
       lastBackupAt: dateFromMsOrNull(j['lastBackupAt']),
+      lastChatModelId: asStrOrNull(j['lastChatModelId']),
+      lastReasoning: j['lastReasoning'] == null ? null : ReasoningLevel.fromName(j['lastReasoning']),
     );
   }
 
@@ -447,6 +460,8 @@ class AppSettings {
     'translateTarget': translateTarget,
     'onboarded': onboarded,
     'lastBackupAt': lastBackupAt?.millisecondsSinceEpoch,
+    'lastChatModelId': lastChatModelId,
+    'lastReasoning': lastReasoning?.name,
   };
 }
 

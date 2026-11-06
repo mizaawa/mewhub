@@ -1,103 +1,133 @@
-"""Generates MewHub icons: a caramel cat face on a milk-white gradient.
+"""Builds MewHub's icon set from the generated artwork in tool/icon_art.png.
 
-Outputs (1024px):
+The artwork (gpt-image-2.6) is a clay cat-bubble on a milk-cream gradient.
+This script cuts the cat out and writes (1024px):
   assets/images/icon.png       full icon (iOS / in-app), no alpha
-  assets/images/icon_fg.png    adaptive foreground (transparent, safe zone)
-  assets/images/icon_mono.png  monochrome (Android 13 themed icon)
+  assets/images/icon_fg.png    adaptive foreground: cat + soft shadow, in the safe zone
+  assets/images/icon_bg.png    adaptive background: the artwork's cream gradient
+  assets/images/icon_mono.png  monochrome silhouette (Android 13 themed icon)
+Then run `dart run flutter_launcher_icons`.
+
+usage: python tool/make_icon.py
 """
-from PIL import Image, ImageDraw, ImageFilter
+from collections import deque
 
-S = 2048  # supersample, downscaled to 1024
-CREAM_TOP = (253, 249, 243)
-CREAM_BOT = (236, 220, 202)
-CARAMEL = (196, 140, 92)
-CARAMEL_DARK = (160, 108, 66)
-INNER_EAR = (244, 186, 178)
-COCOA = (74, 56, 44)
-BLUSH = (242, 160, 150)
+import numpy as np
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
-
-def gradient(size, top, bot):
-    img = Image.new('RGB', (size, size), top)
-    d = ImageDraw.Draw(img)
-    for y in range(size):
-        t = y / (size - 1)
-        c = tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3))
-        d.line([(0, y), (size, y)], fill=c)
-    return img
+ART = 'tool/icon_art.png'
+OUT = 'assets/images/'
+N = 1024
+# Adaptive icons: 108dp canvas, 66dp guaranteed visible. Keep the cat's
+# widest extent inside ~60dp so circle masks don't clip the ears.
+FG_SPAN = 0.52
 
 
-def cat(size, scale=1.0, mono=False):
-    """Draws the cat on a transparent layer; scale shrinks it toward center."""
-    layer = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(layer)
-    cx, cy = size / 2, size / 2 + size * 0.04 * scale
-    u = size * scale / 1024  # unit relative to a 1024 design
+def cat_mask(rgb, thr=160):
+    """Flood-fills bright background + shadow from the borders; the cat's
+    darker caramel rim stops the fill. Keeps the largest remaining region."""
+    im = np.asarray(rgb).astype(np.int32)
+    h, w, _ = im.shape
+    passable = im.min(axis=2) > thr
+    seen = np.zeros((h, w), bool)
+    q = deque()
+    for x in range(w):
+        for y in (0, h - 1):
+            if passable[y, x] and not seen[y, x]:
+                seen[y, x] = True
+                q.append((y, x))
+    for y in range(h):
+        for x in (0, w - 1):
+            if passable[y, x] and not seen[y, x]:
+                seen[y, x] = True
+                q.append((y, x))
+    while q:
+        y, x = q.popleft()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and not seen[ny, nx] and passable[ny, nx]:
+                seen[ny, nx] = True
+                q.append((ny, nx))
+    cat = ~seen
+    # Largest 4-connected component only (drops shadow fragments).
+    label = np.zeros((h, w), np.int32)
+    best, best_n, cur = 0, 0, 0
+    for y0 in range(h):
+        for x0 in np.flatnonzero(cat[y0] & (label[y0] == 0)):
+            if label[y0, x0]:
+                continue
+            cur += 1
+            label[y0, x0] = cur
+            q = deque([(y0, x0)])
+            n = 0
+            while q:
+                y, x = q.popleft()
+                n += 1
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < h and 0 <= nx < w and cat[ny, nx] and not label[ny, nx]:
+                        label[ny, nx] = cur
+                        q.append((ny, nx))
+            if n > best_n:
+                best, best_n = cur, n
+    m = Image.fromarray(((label == best) * 255).astype(np.uint8), 'L')
+    return m.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(1.0))
 
-    def P(x, y):
-        return (cx + x * u, cy + y * u)
 
-    head = CARAMEL if not mono else (255, 255, 255)
-    dark = CARAMEL_DARK if not mono else (255, 255, 255)
-    # ears (outer)
-    d.polygon([P(-300, -120), P(-250, -400), P(-90, -250)], fill=dark)
-    d.polygon([P(300, -120), P(250, -400), P(90, -250)], fill=dark)
-    # head
-    d.ellipse([P(-330, -300), P(330, 290)], fill=head)
-    if not mono:
-        # inner ears
-        d.polygon([P(-255, -170), P(-238, -330), P(-140, -240)], fill=INNER_EAR)
-        d.polygon([P(255, -170), P(238, -330), P(140, -240)], fill=INNER_EAR)
-        # muzzle highlight
-        d.ellipse([P(-150, 20), P(150, 230)], fill=(250, 236, 220))
-        # blush
-        d.ellipse([P(-250, 40), P(-160, 100)], fill=BLUSH)
-        d.ellipse([P(160, 40), P(250, 100)], fill=BLUSH)
-    eye = COCOA if not mono else (0, 0, 0, 0)
-    w = int(26 * u)
-    # happy closed eyes (arcs)
-    d.arc([P(-215, -90), P(-85, 20)], start=200, end=340, fill=eye, width=w)
-    d.arc([P(85, -90), P(215, 20)], start=200, end=340, fill=eye, width=w)
-    # nose
-    nose = (232, 128, 120) if not mono else (0, 0, 0, 0)
-    d.polygon([P(-34, 40), P(34, 40), P(0, 82)], fill=nose)
-    # mouth "w"
-    mw = int(18 * u)
-    d.arc([P(-70, 60), P(2, 130)], start=20, end=160, fill=eye, width=mw)
-    d.arc([P(-2, 60), P(70, 130)], start=20, end=160, fill=eye, width=mw)
-    if not mono:
-        # whiskers
-        ww = int(10 * u)
-        for dy in (60, 105):
-            d.line([P(-170, dy), P(-330, dy - 25)], fill=(140, 100, 70), width=ww)
-            d.line([P(170, dy), P(330, dy - 25)], fill=(140, 100, 70), width=ww)
+def background(rgb):
+    """Vertical cream gradient sampled from the artwork's left/right borders."""
+    a = np.asarray(rgb).astype(np.float32)
+    col = (a[:, :24].mean(axis=1) + a[:, -24:].mean(axis=1)) / 2
+    grad = np.repeat(col[:, None, :], a.shape[1], axis=1)
+    return Image.fromarray(grad.clip(0, 255).astype(np.uint8), 'RGB')
+
+
+def soft_shadow(alpha, size):
+    """A flat, warm contact shadow under the cat, like the artwork's."""
+    box = alpha.point(lambda v: 255 if v > 128 else 0).getbbox()
+    sh = Image.new('L', (size, size), 0)
+    x0, _, x1, y1 = box
+    cx, w = (x0 + x1) / 2, (x1 - x0)
+    ImageDraw.Draw(sh).ellipse([cx - w * 0.42, y1 - w * 0.035, cx + w * 0.42, y1 + w * 0.05], fill=120)
+    sh = sh.filter(ImageFilter.GaussianBlur(size * 0.018))
+    layer = Image.new('RGBA', (size, size), (150, 98, 58, 0))
+    layer.putalpha(ImageChops.subtract(sh, alpha))
     return layer
 
 
-def shadow(layer, size):
-    a = layer.split()[3].filter(ImageFilter.GaussianBlur(size * 0.025))
-    sh = Image.new('RGBA', layer.size, (120, 80, 50, 0))
-    sh.putalpha(a.point(lambda v: int(v * 0.35)))
-    out = Image.new('RGBA', layer.size, (0, 0, 0, 0))
-    out.alpha_composite(sh, (0, int(size * 0.02)))
+def place(img, alpha, span):
+    """Scales the cat so its bbox width is span*N and centres it."""
+    box = alpha.point(lambda v: 255 if v > 128 else 0).getbbox()
+    cw, ch = box[2] - box[0], box[3] - box[1]
+    s = span * N / cw
+    crop = img.crop(box).resize((round(cw * s), round(ch * s)), Image.LANCZOS)
+    out = Image.new(img.mode, (N, N), (0,) * len(img.getbands()))
+    out.paste(crop, ((N - crop.width) // 2, (N - crop.height) // 2 + round(N * 0.01)))
     return out
 
 
 def main():
-    bg = gradient(S, CREAM_TOP, CREAM_BOT).convert('RGBA')
-    c = cat(S, 0.92)
-    bg.alpha_composite(shadow(c, S))
-    bg.alpha_composite(c)
-    bg.convert('RGB').resize((1024, 1024), Image.LANCZOS).save('assets/images/icon.png', optimize=True)
+    art = Image.open(ART).convert('RGB').resize((N, N), Image.LANCZOS)
+    art.save(OUT + 'icon.png', optimize=True)
+    background(art).save(OUT + 'icon_bg.png', optimize=True)
 
-    fg = Image.new('RGBA', (S, S), (0, 0, 0, 0))
-    c2 = cat(S, 0.58)
-    fg.alpha_composite(shadow(c2, S))
-    fg.alpha_composite(c2)
-    fg.resize((1024, 1024), Image.LANCZOS).save('assets/images/icon_fg.png', optimize=True)
+    alpha = cat_mask(art)
+    cat = art.copy()
+    cat.putalpha(alpha)
+    fg_cat = place(cat, alpha, FG_SPAN)
+    fg = Image.new('RGBA', (N, N), (0, 0, 0, 0))
+    fg.alpha_composite(soft_shadow(fg_cat.split()[3], N))
+    fg.alpha_composite(fg_cat)
+    fg.save(OUT + 'icon_fg.png', optimize=True)
 
-    mono = cat(S, 0.58, mono=True)
-    mono.resize((1024, 1024), Image.LANCZOS).save('assets/images/icon_mono.png', optimize=True)
+    # Silhouette with the dark face strokes (eyes, mouth, whiskers) punched out.
+    lum = fg_cat.convert('RGB').convert('L')
+    strokes = lum.point(lambda v: 255 if v < 115 else 0)
+    strokes = ImageChops.multiply(strokes, fg_cat.split()[3].filter(ImageFilter.MinFilter(25)))
+    strokes = strokes.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(0.8))
+    mono = Image.new('RGBA', (N, N), (255, 255, 255, 0))
+    mono.putalpha(ImageChops.subtract(fg_cat.split()[3], strokes))
+    mono.save(OUT + 'icon_mono.png', optimize=True)
     print('icons written')
 
 

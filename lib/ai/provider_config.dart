@@ -17,6 +17,7 @@ enum ReasoningLevel {
   low(1024, 'low'),
   medium(4096, 'medium'),
   high(16384, 'high'),
+  xhigh(24576, 'xhigh'),
   max(32768, 'max');
 
   const ReasoningLevel(this.budget, this.effort);
@@ -24,6 +25,45 @@ enum ReasoningLevel {
   final String effort;
 
   bool get enabled => this != off;
+
+  /// Levels offered in the UI, weakest to strongest. [off] is internal only
+  /// (background helpers such as title generation).
+  static const selectable = [auto, low, medium, high, xhigh, max];
+
+  /// Old settings may still hold [off]; the UI no longer offers it.
+  static ReasoningLevel fromName(Object? name) {
+    for (final l in values) {
+      if (l.name == name) return l == off ? auto : l;
+    }
+    return auto;
+  }
+}
+
+/// `reasoning.effort` / `reasoning_effort` for OpenAI-style models.
+/// Older GPT models reject `xhigh` / `max`, so those step down to the
+/// strongest level the model family is known to accept.
+String openAiEffort(String modelId, ReasoningLevel level) {
+  if (level != ReasoningLevel.xhigh && level != ReasoningLevel.max) return level.effort;
+  final id = modelId.toLowerCase();
+  if (id.contains('claude')) return anthropicEffort(modelId, level);
+  final m = RegExp(r'gpt-(\d+)(?:\.(\d+))?').firstMatch(id);
+  if (m == null) return 'high';
+  final v = int.parse(m.group(1)!) * 100 + int.parse(m.group(2) ?? '0');
+  final xhigh = v >= 502 || id.contains('codex-max');
+  final max = v >= 506;
+  if (level == ReasoningLevel.max && max) return 'max';
+  return xhigh ? 'xhigh' : 'high';
+}
+
+/// `output_config.effort` for Claude. Opus 4.5 has neither `xhigh` nor `max`;
+/// Opus / Sonnet 4.6 have `max` but not `xhigh`.
+String anthropicEffort(String modelId, ReasoningLevel level) {
+  final id = modelId.toLowerCase();
+  if (RegExp(r'(opus|sonnet)-4-5').hasMatch(id)) {
+    return level.index > ReasoningLevel.high.index ? 'high' : level.effort;
+  }
+  if (level == ReasoningLevel.xhigh && RegExp(r'(opus|sonnet)-4-6').hasMatch(id)) return 'high';
+  return level.effort;
 }
 
 class KeyValue {
