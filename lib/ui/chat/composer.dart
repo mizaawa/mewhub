@@ -185,6 +185,39 @@ class ComposerState extends State<Composer> {
     if (mounted) setState(() => _listening = false);
   }
 
+  Future<void> _openFullEditor() async {
+    _focus.unfocus();
+    final send = await Navigator.of(context).push<bool>(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black26,
+        transitionDuration: const Duration(milliseconds: 380),
+        reverseTransitionDuration: const Duration(milliseconds: 260),
+        pageBuilder: (context, a, b) => FullScreenEditor(
+          controller: _text,
+          fontScale: widget.settings.display.fontScale,
+          canSend: !widget.generating,
+        ),
+        transitionsBuilder: (context, a, b, child) {
+          final c = CurvedAnimation(parent: a, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+          return FadeTransition(
+            opacity: c,
+            child: SlideTransition(
+              position: Tween(begin: const Offset(0, 0.06), end: Offset.zero).animate(c),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+    if (!mounted) return;
+    if (send == true) {
+      await _send();
+    } else {
+      _focus.requestFocus();
+    }
+  }
+
   void _reasoningSheet() {
     showModalBottomSheet<void>(
       context: context,
@@ -256,23 +289,34 @@ class ComposerState extends State<Composer> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
-                  child: TextField(
-                    controller: _text,
-                    focusNode: _focus,
-                    minLines: 1,
-                    maxLines: 7,
-                    textInputAction: s.display.sendOnEnter ? TextInputAction.send : TextInputAction.newline,
-                    onSubmitted: s.display.sendOnEnter ? (_) => _send() : null,
-                    style: TextStyle(fontSize: 15.5 * s.display.fontScale, height: 1.45),
-                    decoration: InputDecoration(
-                      hintText: _listening ? t('正在聆听…', 'Listening…') : t('和 Mew 说点什么…', 'Message Mew…'),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _text,
+                          focusNode: _focus,
+                          minLines: 1,
+                          maxLines: 7,
+                          textInputAction: s.display.sendOnEnter ? TextInputAction.send : TextInputAction.newline,
+                          onSubmitted: s.display.sendOnEnter ? (_) => _send() : null,
+                          style: TextStyle(fontSize: 15.5 * s.display.fontScale, height: 1.45),
+                          decoration: InputDecoration(
+                            hintText: _listening ? t('正在聆听…', 'Listening…') : t('和 Mew 说点什么…', 'Message Mew…'),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: _ExpandButton(onTap: _openFullEditor),
+                      ),
+                    ],
                   ),
                 ),
                 Padding(
@@ -764,9 +808,10 @@ class _SendButton extends StatelessWidget {
     return Pressable(
       onTap: enabled ? onTap : null,
       scale: 0.86,
+      // No overshooting curve here: lerping the shadow past 1 gives a negative blur.
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutBack,
+        curve: Curves.easeOutCubic,
         width: 40,
         height: 40,
         decoration: BoxDecoration(
@@ -820,6 +865,176 @@ class _ToolTile extends StatelessWidget {
             const SizedBox(height: 6),
             Text(label, style: Theme.of(context).textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small corner button in the input that opens the full-screen editor.
+class _ExpandButton extends StatelessWidget {
+  const _ExpandButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: t('全屏编辑', 'Full-screen editor'),
+      child: Pressable(
+        onTap: onTap,
+        scale: 0.85,
+        child: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(color: scheme.surfaceContainerHigh, borderRadius: BorderRadius.circular(10)),
+          child: Icon(Icons.open_in_full_rounded, size: 15, color: scheme.onSurfaceVariant),
+        ),
+      ),
+    );
+  }
+}
+
+/// Full-screen draft editor sharing the composer's controller. Pops `true`
+/// when the user taps send, `false`/null when they just close it.
+class FullScreenEditor extends StatefulWidget {
+  const FullScreenEditor({super.key, required this.controller, this.fontScale = 1.0, this.canSend = true});
+  final TextEditingController controller;
+  final double fontScale;
+  final bool canSend;
+
+  @override
+  State<FullScreenEditor> createState() => _FullScreenEditorState();
+}
+
+class _FullScreenEditorState extends State<FullScreenEditor> {
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_changed);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+  }
+
+  void _changed() => setState(() {});
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_changed);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final text = widget.controller.text;
+    final lines = text.isEmpty ? 0 : '\n'.allMatches(text).length + 1;
+    final canSend = widget.canSend && text.trim().isNotEmpty;
+    final insets = MediaQuery.viewInsetsOf(context).bottom;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      resizeToAvoidBottomInset: false,
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(10, 8, 10, 10 + insets),
+          child: Container(
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: scheme.outlineVariant),
+              boxShadow: [
+                BoxShadow(color: scheme.shadow.withValues(alpha: 0.12), blurRadius: 30, offset: const Offset(0, 10)),
+              ],
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 6, 8, 0),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: t('收起', 'Collapse'),
+                        icon: const Icon(Icons.close_fullscreen_rounded, size: 20),
+                        onPressed: () => Navigator.pop(context, false),
+                      ),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(t('全屏编辑', 'Editor'), style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                            Text(
+                              t(
+                                '$lines 行 · ${text.characters.length} 字',
+                                '$lines lines · ${text.characters.length} chars',
+                              ),
+                              style: tt.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 200),
+                        opacity: text.isEmpty ? 0 : 1,
+                        child: IconButton(
+                          tooltip: t('清空', 'Clear'),
+                          icon: Icon(Icons.backspace_outlined, size: 19, color: scheme.onSurfaceVariant),
+                          onPressed: text.isEmpty ? null : widget.controller.clear,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      AnimatedScale(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutBack,
+                        scale: canSend ? 1 : 0.92,
+                        child: FilledButton.icon(
+                          onPressed: canSend ? () => Navigator.pop(context, true) : null,
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            minimumSize: const Size(0, 38),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+                          label: Text(t('发送', 'Send')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Divider(height: 12, color: scheme.outlineVariant.withValues(alpha: 0.6)),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: TextField(
+                      controller: widget.controller,
+                      focusNode: _focus,
+                      expands: true,
+                      maxLines: null,
+                      minLines: null,
+                      keyboardType: TextInputType.multiline,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: TextStyle(fontSize: 16.5 * widget.fontScale, height: 1.6),
+                      decoration: InputDecoration(
+                        hintText: t('慢慢写，想写多长都可以…', 'Take your time, write as much as you like…'),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -20,7 +20,7 @@ MewHub 是一个多供应商 AI 聊天客户端，功能参考 [RikkaHub](https:
 - **四种协议原生实现**：OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini，全部流式输出
 - **任意第三方 API**：自定义 Base URL / 路径 / 请求头 / 请求体，多 Key 轮询，余额查询；内置 DeepSeek、OpenRouter、硅基流动、月之暗面、百炼、火山、智谱、xAI、Ollama 等模板
 - **导入配置**：扫码 / 剪贴板导入，兼容 RikkaHub 的 `ai-provider:v1:` 分享码与通用 JSON
-- **深度思考**：思考强度滑动条六档（auto / low / medium / high / xhigh / max），模型不支持的档位自动降级，新对话沿用上次的模型与强度；按厂商自动转换参数（Claude adaptive thinking、OpenAI reasoning effort、Gemini thinkingConfig、DeepSeek/Qwen/GLM/Kimi 开关），思考过程可折叠；签名与加密推理内容会正确回传，多轮工具调用不丢上下文
+- **深度思考**：思考强度滑动条六档（auto / low / medium / high / xhigh / max），模型不支持的档位自动降级，新对话沿用上次的模型与强度；输入框可一键展开全屏编辑；按厂商自动转换参数（Claude adaptive thinking、OpenAI reasoning effort、Gemini thinkingConfig、DeepSeek/Qwen/GLM/Kimi 开关），思考过程可折叠；签名与加密推理内容会正确回传，多轮工具调用不丢上下文
 - **工具调用（Agent 循环）**：联网搜索（Bing 免 Key、Tavily、Exa、Brave、Serper、Jina、智谱、博查、Perplexity、SearXNG、LinkUp）、网页读取、长期记忆、计算器、时间、剪贴板、设备信息；运行前可要求确认
 - **MCP**：远程 Streamable HTTP 与 SSE 服务器，按工具开关
 - **模型内置能力**：OpenAI / Claude / Gemini 原生联网搜索、Gemini URL 上下文、生图模型

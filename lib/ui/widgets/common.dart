@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,22 +9,164 @@ import '../../core/i18n.dart';
 import '../../core/paths.dart';
 import 'motion.dart';
 
+OverlayEntry? _toastEntry;
+
+/// Brief notice shown as a pill under the status bar, clear of the composer
+/// and its buttons. Only one is visible at a time; it has its own close button
+/// and lets touches through everywhere else.
 void toast(BuildContext context, String msg, {bool error = false}) {
-  final m = ScaffoldMessenger.maybeOf(context);
-  if (m == null) return;
-  m.hideCurrentSnackBar();
-  m.showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          Icon(error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Text(msg, maxLines: 4, overflow: TextOverflow.ellipsis)),
-        ],
-      ),
-      duration: Duration(milliseconds: error ? 4000 : 1800),
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay == null) return;
+  _toastEntry?.remove();
+  late final OverlayEntry entry;
+  void close() {
+    if (identical(_toastEntry, entry)) _toastEntry = null;
+    if (entry.mounted) entry.remove();
+  }
+
+  entry = OverlayEntry(
+    builder: (_) => _Toast(
+      message: msg,
+      error: error,
+      duration: Duration(milliseconds: error ? 4000 : 2200),
+      onClosed: close,
     ),
   );
+  _toastEntry = entry;
+  overlay.insert(entry);
+}
+
+class _Toast extends StatefulWidget {
+  const _Toast({required this.message, required this.error, required this.duration, required this.onClosed});
+  final String message;
+  final bool error;
+  final Duration duration;
+  final VoidCallback onClosed;
+
+  @override
+  State<_Toast> createState() => _ToastState();
+}
+
+class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 320),
+    reverseDuration: const Duration(milliseconds: 200),
+  )..forward();
+  late final Animation<double> _curve = CurvedAnimation(
+    parent: _c,
+    curve: Curves.easeOutBack,
+    reverseCurve: Curves.easeInCubic,
+  );
+  bool _closing = false;
+  late final Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(widget.duration, _dismiss);
+  }
+
+  Future<void> _dismiss() async {
+    if (_closing || !mounted) return;
+    _closing = true;
+    await _c.reverse();
+    widget.onClosed();
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    final bg = dark ? const Color(0xFF332D26) : const Color(0xFF4A3B30);
+    final fg = Colors.white.withValues(alpha: 0.95);
+    final accent = widget.error ? const Color(0xFFFFA8A0) : Color.lerp(scheme.primary, Colors.white, 0.45)!;
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: MediaQuery.paddingOf(context).top + kToolbarHeight + 6,
+      child: Center(
+        child: FadeTransition(
+          opacity: _c,
+          child: AnimatedBuilder(
+            animation: _curve,
+            builder: (context, child) => Transform.translate(
+              offset: Offset(0, -14 * (1 - _curve.value)),
+              child: Transform.scale(scale: 0.92 + 0.08 * _curve.value, child: child),
+            ),
+            child: Dismissible(
+              key: const ValueKey('toast'),
+              direction: DismissDirection.up,
+              onDismissed: (_) => widget.onClosed(),
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width - 40),
+                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        widget.error ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+                        color: accent,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          widget.message,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(color: fg, height: 1.3),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Semantics(
+                        button: true,
+                        label: t('关闭提示', 'Dismiss'),
+                        child: InkResponse(
+                          onTap: _dismiss,
+                          radius: 18,
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.close_rounded, size: 16, color: fg),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Future<void> copyText(BuildContext context, String text) async {
