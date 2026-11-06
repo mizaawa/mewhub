@@ -197,7 +197,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [meta, android, ios]
+    needs: [meta, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -206,8 +206,8 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
+          name: android-dist
           path: dist
-          merge-multiple: true
 
       - name: Release notes
         shell: bash
@@ -215,14 +215,6 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
         run: |
           {
-            echo "## 更新内容"
-            echo
-            echo "- 侧栏改为今日 Token 用量卡片，支持聊天文件夹与按更新时间/创建时间排序。"
-            echo "- 用量统计自动检查新版本，并显示最多五行的 Release 更新日志。"
-            echo "- 个人资料默认名称改为 Mew，默认助手改为 MewBot，头像裁切改为圆形填充。"
-            echo "- 移除 Zako AI 的锁定标识，调整全屏编辑按钮对齐。"
-            echo "- 备份补全收藏、文件夹与排序设置，并修复无密钥备份的凭据处理。"
-            echo
             echo "## 📦 Downloads"
             echo
             echo "| Platform | File |"
@@ -231,10 +223,9 @@ jobs:
             echo "| Android, older 32-bit phones | \`MewHub-$VERSION-android-armeabi-v7a.apk\` |"
             echo "| Android, any device | \`MewHub-$VERSION-android-universal.apk\` |"
             echo "| Android, Google Play upload | \`MewHub-$VERSION-android.aab\` |"
-            echo "| iOS, sideload | \`MewHub-$VERSION-ios-unsigned.ipa\` |"
             echo
-            echo "The iOS IPA is **unsigned**. Install it with AltStore, SideStore, Sideloadly or TrollStore,"
-            echo "which re-sign it with your own Apple ID. Checksums are in \`SHA256SUMS-*.txt\`."
+            echo "The unsigned iOS IPA is added separately if its build succeeds."
+            echo "Android checksums are in \`SHA256SUMS-android.txt\`."
           } > notes.md
 
       - uses: softprops/action-gh-release@v3
@@ -242,11 +233,27 @@ jobs:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: MewHub ${{ needs.meta.outputs.tag }}
           body_path: notes.md
-          generate_release_notes: false
+          generate_release_notes: true
           prerelease: ${{ needs.meta.outputs.prerelease }}
           fail_on_unmatched_files: true
           files: |
             dist/*.apk
             dist/*.aab
+            dist/SHA256SUMS-android.txt
+
+  publish-ios:
+    name: Attach iOS IPA
+    needs: [meta, publish, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ios-dist
+          path: dist
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          files: |
             dist/*.ipa
-            dist/SHA256SUMS-*.txt
+            dist/SHA256SUMS-ios.txt
