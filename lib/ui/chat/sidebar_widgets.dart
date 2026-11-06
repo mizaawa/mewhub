@@ -1,10 +1,98 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/i18n.dart';
+import '../../core/release_update.dart';
 import '../../data/chat_folder.dart';
 import '../../data/usage_statistics.dart';
 import '../../state/app_state.dart';
+
+/// A compact update card in the gap between the profile and today's usage.
+class SidebarReleaseNotice extends StatefulWidget {
+  const SidebarReleaseNotice({super.key, this.releaseUpdate});
+
+  /// Allows a deterministic release result in widget tests.
+  final Future<ReleaseUpdate?>? releaseUpdate;
+
+  @override
+  State<SidebarReleaseNotice> createState() => _SidebarReleaseNoticeState();
+}
+
+class _SidebarReleaseNoticeState extends State<SidebarReleaseNotice> {
+  late Future<ReleaseUpdate?> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.releaseUpdate ?? checkForReleaseUpdate();
+  }
+
+  @override
+  void didUpdateWidget(SidebarReleaseNotice oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.releaseUpdate != oldWidget.releaseUpdate) {
+      _future = widget.releaseUpdate ?? checkForReleaseUpdate();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<ReleaseUpdate?>(
+    future: _future,
+    builder: (context, snapshot) {
+      final update = snapshot.data;
+      if (update == null) return const SizedBox.shrink();
+      final scheme = Theme.of(context).colorScheme;
+      final version = update.version.startsWith('v') ? update.version : 'v${update.version}';
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(14, 2, 14, 2),
+        child: Material(
+          color: scheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            key: const ValueKey('release-update-notice'),
+            borderRadius: BorderRadius.circular(16),
+            onTap: () async {
+              try {
+                await launchUrl(update.url, mode: LaunchMode.externalApplication);
+              } catch (_) {
+                // Keep the drawer usable if no browser is available.
+              }
+            },
+            child: SizedBox(
+              height: 52,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.new_releases_rounded, size: 21, color: scheme.onSecondaryContainer),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        t('有新版本 $version', 'New version $version'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700, color: scheme.onSecondaryContainer),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      t('查看', 'View'),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.primary),
+                    ),
+                    const SizedBox(width: 3),
+                    Icon(Icons.chevron_right_rounded, size: 18, color: scheme.primary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
 
 class SidebarQuickLinks extends StatelessWidget {
   const SidebarQuickLinks({

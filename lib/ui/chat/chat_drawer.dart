@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/attachments.dart';
 import '../../core/i18n.dart';
+import '../../core/release_update.dart';
 import '../../core/util.dart';
 import '../../data/chat_folder.dart';
 import '../../data/database.dart';
@@ -16,8 +17,9 @@ import 'sidebar_widgets.dart';
 /// Conversation list + navigation. Used as a Drawer on phones and as a
 /// permanent side panel on tablets ([embedded]).
 class ChatDrawer extends StatefulWidget {
-  const ChatDrawer({super.key, this.embedded = false});
+  const ChatDrawer({super.key, this.embedded = false, this.releaseUpdate});
   final bool embedded;
+  final Future<ReleaseUpdate?>? releaseUpdate;
 
   @override
   State<ChatDrawer> createState() => _ChatDrawerState();
@@ -255,6 +257,7 @@ class _ChatDrawerState extends State<ChatDrawer> {
             avatar: s.display.userAvatar,
             onTap: () => _editProfile(context.read<SettingsStore>()),
           ),
+          SidebarReleaseNotice(releaseUpdate: widget.releaseUpdate),
           const SidebarTodayUsage(),
           SidebarChatToolbar(
             folders: folders,
