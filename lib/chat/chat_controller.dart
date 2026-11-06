@@ -10,6 +10,7 @@ import '../ai/provider.dart';
 import '../ai/provider_config.dart';
 import '../core/i18n.dart';
 import '../core/net.dart';
+import '../core/retry.dart';
 import '../data/assistant.dart';
 import '../data/conversation.dart';
 import '../data/database.dart';
@@ -362,28 +363,15 @@ class ChatController extends ChangeNotifier {
     PartAccumulator acc,
     void Function(List<Part>) onUpdate,
   ) async {
-    final retries = settings.autoRetry ? 2 : 0;
-    for (var attempt = 0; ; attempt++) {
-      final before = acc.parts.length;
-      var received = false;
-      try {
-        await for (final chunk in ai.stream(prompt, params, cancel: cancel)) {
-          if (cancel.isCancelled) break;
-          received = true;
-          acc.add(chunk);
-          onUpdate(List.unmodifiable(acc.parts));
-        }
-        return;
-      } on http.RequestAbortedException {
-        rethrow;
-      } catch (e) {
-        // Only retry transient failures that happened before any output.
-        final status = e is ApiException ? e.status : null;
-        final transient = status == null || status == 429 || status >= 500;
-        if (received || attempt >= retries || !transient || cancel.isCancelled) rethrow;
-        if (acc.parts.length > before) acc.parts.removeRange(before, acc.parts.length);
-        await Future<void>.delayed(Duration(milliseconds: 800 * (1 << attempt)));
-      }
+    final preferences = settings;
+    await for (final chunk in retryStream(
+      () => ai.stream(prompt, params, cancel: cancel),
+      cancel: cancel,
+      settings: preferences.network,
+      enabled: preferences.autoRetry,
+    )) {
+      acc.add(chunk);
+      onUpdate(List.unmodifiable(acc.parts));
     }
   }
 

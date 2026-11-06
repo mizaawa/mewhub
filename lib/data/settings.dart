@@ -4,6 +4,7 @@ import '../core/util.dart';
 import 'assistant.dart';
 import 'defaults.dart';
 import 'models_misc.dart';
+import 'network_settings.dart';
 
 enum ThemeModePref { system, light, dark }
 
@@ -215,6 +216,7 @@ class AppSettings {
     this.userAgent = '',
     this.proxy = '',
     this.autoRetry = true,
+    this.network = const NetworkSettings(),
     this.translateTarget = 'zh-CN',
     this.onboarded = false,
     this.lastBackupAt,
@@ -254,6 +256,7 @@ class AppSettings {
   final String userAgent;
   final String proxy;
   final bool autoRetry;
+  final NetworkSettings network;
   final String translateTarget;
   final bool onboarded;
   final DateTime? lastBackupAt;
@@ -329,6 +332,7 @@ class AppSettings {
     String? userAgent,
     String? proxy,
     bool? autoRetry,
+    NetworkSettings? network,
     String? translateTarget,
     bool? onboarded,
     DateTime? lastBackupAt,
@@ -367,6 +371,7 @@ class AppSettings {
     userAgent: userAgent ?? this.userAgent,
     proxy: proxy ?? this.proxy,
     autoRetry: autoRetry ?? this.autoRetry,
+    network: network ?? this.network,
     translateTarget: translateTarget ?? this.translateTarget,
     onboarded: onboarded ?? this.onboarded,
     lastBackupAt: lastBackupAt ?? this.lastBackupAt,
@@ -422,6 +427,7 @@ class AppSettings {
       userAgent: asStr(j['userAgent']),
       proxy: asStr(j['proxy']),
       autoRetry: asBool(j['autoRetry'], true),
+      network: NetworkSettings.fromJson(asMap(j['network'])),
       translateTarget: asStr(j['translateTarget'], 'zh-CN'),
       onboarded: asBool(j['onboarded']),
       lastBackupAt: dateFromMsOrNull(j['lastBackupAt']),
@@ -466,6 +472,7 @@ class AppSettings {
     'userAgent': userAgent,
     'proxy': proxy,
     'autoRetry': autoRetry,
+    'network': network.toJson(),
     'translateTarget': translateTarget,
     'onboarded': onboarded,
     'lastBackupAt': lastBackupAt?.millisecondsSinceEpoch,

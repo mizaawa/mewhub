@@ -67,9 +67,15 @@ class SettingsStore extends ChangeNotifier {
 
   void _applyRuntime() {
     I18n.apply(_settings.language);
-    final changed = NetConfig.userAgent != _settings.userAgent || NetConfig.proxy != _settings.proxy;
+    final changed =
+        NetConfig.userAgent != _settings.userAgent ||
+        NetConfig.proxy != _settings.proxy ||
+        NetConfig.connectTimeout != Duration(seconds: _settings.network.connectTimeoutSeconds) ||
+        NetConfig.responseTimeout != Duration(seconds: _settings.network.responseTimeoutSeconds);
     NetConfig.userAgent = _settings.userAgent;
     NetConfig.proxy = _settings.proxy;
+    NetConfig.connectTimeout = Duration(seconds: _settings.network.connectTimeoutSeconds);
+    NetConfig.responseTimeout = Duration(seconds: _settings.network.responseTimeoutSeconds);
     if (changed) Net.reconfigure();
   }
 

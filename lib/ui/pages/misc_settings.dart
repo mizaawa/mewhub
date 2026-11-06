@@ -10,6 +10,7 @@ import '../../data/settings.dart';
 import '../../state/notifications.dart';
 import '../../state/settings_store.dart';
 import '../chat/model_picker.dart';
+import '../settings/network_options.dart';
 import '../widgets/code_block.dart';
 import '../widgets/common.dart';
 
@@ -568,15 +569,9 @@ class NetworkSettingsPage extends StatelessWidget {
                   if (v != null) store.update((x) => x.copyWith(userAgent: v.trim()));
                 },
               ),
-              SwitchListTile(
-                secondary: const IconBadge(Icons.replay_rounded),
-                title: Text(t('失败自动重试', 'Auto retry')),
-                subtitle: Text(t('网络错误或 5xx/429 时最多重试 2 次', 'Up to 2 retries on network errors, 5xx or 429')),
-                value: s.autoRetry,
-                onChanged: (v) => store.update((x) => x.copyWith(autoRetry: v)),
-              ),
             ],
           ),
+          const NetworkOptions(),
         ],
       ),
     );
