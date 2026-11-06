@@ -318,6 +318,9 @@ class AvatarView extends StatelessWidget {
         height: size,
         errorBuilder: (context, error, stack) => _mono(context),
       );
+      if (value == 'asset:assets/images/icon.png') {
+        inner = Transform.scale(scale: 1.35, child: inner);
+      }
     } else if (value.isNotEmpty && _isImage) {
       inner = Image.file(
         File(AppPaths.resolve(value)),
@@ -337,11 +340,7 @@ class AvatarView extends StatelessWidget {
       width: size,
       height: size,
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(size * 0.34),
-        border: Border.all(color: scheme.outlineVariant, width: 0.8),
-      ),
+      decoration: BoxDecoration(color: scheme.secondaryContainer, shape: BoxShape.circle),
       child: inner,
     );
   }

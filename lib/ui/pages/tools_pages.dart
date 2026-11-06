@@ -70,6 +70,7 @@ class _BackupPageState extends State<BackupPage> {
     final s = await BackupService(app.db).restore(bytes, store.value);
     store.replace(s);
     await store.flush();
+    app.favoriteIds = await app.db.favoriteMessageIds();
     await app.refreshList();
     app.newChat();
     if (mounted) toast(context, t('恢复完成', 'Restored'));

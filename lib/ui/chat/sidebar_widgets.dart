@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/i18n.dart';
+import '../../data/chat_folder.dart';
+import '../../data/usage_statistics.dart';
+import '../../state/app_state.dart';
 
 class SidebarQuickLinks extends StatelessWidget {
   const SidebarQuickLinks({
@@ -85,66 +89,249 @@ class SidebarQuickLinks extends StatelessWidget {
   }
 }
 
-class SidebarChatToolbar extends StatelessWidget {
-  const SidebarChatToolbar({
-    super.key,
-    required this.allAssistants,
-    required this.sortByTitle,
-    required this.onNewChat,
-    required this.onToggleAssistants,
-    required this.onToggleSort,
-  });
+class SidebarTodayUsage extends StatefulWidget {
+  const SidebarTodayUsage({super.key});
 
-  final bool allAssistants;
-  final bool sortByTitle;
-  final VoidCallback onNewChat;
-  final VoidCallback onToggleAssistants;
-  final VoidCallback onToggleSort;
+  @override
+  State<SidebarTodayUsage> createState() => _SidebarTodayUsageState();
+}
+
+class _SidebarTodayUsageState extends State<SidebarTodayUsage> {
+  Future<List<Map<String, Object?>>>? _future;
+  int _revision = -1;
 
   @override
   Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    if (_future == null || _revision != app.listRevision.value) {
+      _revision = app.listRevision.value;
+      _future = app.db.usageByDay(days: 1);
+    }
     final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+      child: Material(
+        color: scheme.primaryContainer.withValues(alpha: 0.45),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: InkWell(
+          key: const ValueKey('sidebar-today-token'),
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => Navigator.of(context).pushNamed('/settings/stats'),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: FutureBuilder<List<Map<String, Object?>>>(
+              future: _future,
+              builder: (context, snapshot) {
+                var input = 0;
+                var output = 0;
+                var cached = 0;
+                for (final row in snapshot.data ?? const <Map<String, Object?>>[]) {
+                  input += (row['input'] as num?)?.toInt() ?? 0;
+                  output += (row['output'] as num?)?.toInt() ?? 0;
+                  cached += (row['cached'] as num?)?.toInt() ?? 0;
+                }
+                final total = input + output;
+                final cacheRate = input == 0 ? 0.0 : (cached / input).clamp(0.0, 1.0);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(t('今日 Token', 'Today’s tokens'), style: Theme.of(context).textTheme.labelLarge),
+                        ),
+                        Text(
+                          t(
+                            '缓存命中 ${(cacheRate * 100).toStringAsFixed(1)}%',
+                            'Cache hit ${(cacheRate * 100).toStringAsFixed(1)}%',
+                          ),
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.primary),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      statisticsNumber(total),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: input == 0 ? 1 : input,
+                            child: Container(height: 8, color: scheme.primary),
+                          ),
+                          Expanded(
+                            flex: output == 0 ? 1 : output,
+                            child: Container(height: 8, color: scheme.tertiary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Expanded(child: _usageLabel(context, scheme.primary, t('输入', 'Input'), input)),
+                        Expanded(child: _usageLabel(context, scheme.tertiary, t('输出', 'Output'), output)),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    _usageLabel(context, scheme.secondary, t('缓存读取', 'Cache read'), cached),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _usageLabel(BuildContext context, Color color, String label, int value) => Row(
+    children: [
+      Container(
+        width: 7,
+        height: 7,
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+      ),
+      const SizedBox(width: 5),
+      Text('$label  ${statisticsNumber(value)}', style: Theme.of(context).textTheme.labelSmall),
+    ],
+  );
+}
+
+class SidebarChatToolbar extends StatelessWidget {
+  const SidebarChatToolbar({
+    super.key,
+    required this.folders,
+    required this.selectedFolderId,
+    required this.sortByCreation,
+    required this.onNewFolder,
+    required this.onSelectFolder,
+    required this.onRenameFolder,
+    required this.onDeleteFolder,
+    required this.onSortChanged,
+  });
+
+  final List<ChatFolder> folders;
+  final String? selectedFolderId;
+  final bool sortByCreation;
+  final VoidCallback onNewFolder;
+  final ValueChanged<String?> onSelectFolder;
+  final ValueChanged<ChatFolder> onRenameFolder;
+  final ValueChanged<ChatFolder> onDeleteFolder;
+  final ValueChanged<bool> onSortChanged;
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
       child: Row(
         children: [
-          Container(
-            key: const ValueKey('sidebar-chat-tab'),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-            decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(30)),
-            child: Text(
-              t('聊天', 'Chats'),
-              style: TextStyle(color: scheme.onSecondaryContainer, fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 6),
           Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                key: const ValueKey('sidebar-new-chat'),
-                onPressed: onNewChat,
-                icon: const Icon(Icons.create_new_folder_outlined, size: 20),
-                label: Text(t('新建', 'New')),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _folderChip(context, null, t('聊天', 'Chats')),
+                  for (final folder in folders) _folderChip(context, folder, folder.name),
+                  TextButton.icon(
+                    key: const ValueKey('sidebar-new-folder'),
+                    onPressed: onNewFolder,
+                    icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                    label: Text(t('新建', 'New')),
+                  ),
+                ],
               ),
             ),
           ),
-          IconButton(
-            key: const ValueKey('sidebar-assistant-filter'),
-            tooltip: allAssistants ? t('显示当前助手', 'Current assistant') : t('显示全部助手', 'All assistants'),
-            onPressed: onToggleAssistants,
-            icon: Icon(allAssistants ? Icons.groups_rounded : Icons.person_outline_rounded),
-          ),
-          IconButton(
+          PopupMenuButton<bool>(
             key: const ValueKey('sidebar-sort'),
-            tooltip: sortByTitle ? t('按最近排序', 'Sort by recent') : t('按名称排序', 'Sort by name'),
-            onPressed: onToggleSort,
+            tooltip: t('聊天记录排序', 'Sort conversations'),
+            onSelected: onSortChanged,
             icon: const Icon(Icons.sort_rounded),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: false,
+                child: Row(
+                  children: [
+                    Expanded(child: Text(t('按更新时间', 'By update time'))),
+                    if (!sortByCreation) const Icon(Icons.check_rounded, size: 18),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: true,
+                child: Row(
+                  children: [
+                    Expanded(child: Text(t('按创建时间', 'By creation time'))),
+                    if (sortByCreation) const Icon(Icons.check_rounded, size: 18),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+
+  Widget _folderChip(BuildContext context, ChatFolder? folder, String label) {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = selectedFolderId == folder?.id;
+    return Padding(
+      padding: const EdgeInsets.only(right: 5),
+      child: InkWell(
+        key: folder == null ? const ValueKey('sidebar-chat-tab') : ValueKey('sidebar-folder-${folder.id}'),
+        borderRadius: BorderRadius.circular(30),
+        onTap: () => onSelectFolder(folder?.id),
+        onLongPress: folder == null ? null : () => _folderMenu(context, folder),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? scheme.secondaryContainer : Colors.transparent,
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? scheme.onSecondaryContainer : scheme.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _folderMenu(BuildContext context, ChatFolder folder) => showModalBottomSheet<void>(
+    context: context,
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.edit_outlined),
+            title: Text(t('重命名文件夹', 'Rename folder')),
+            onTap: () {
+              Navigator.pop(sheet);
+              onRenameFolder(folder);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline_rounded),
+            title: Text(t('删除文件夹', 'Delete folder')),
+            onTap: () {
+              Navigator.pop(sheet);
+              onDeleteFolder(folder);
+            },
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class SidebarBottomActions extends StatelessWidget {

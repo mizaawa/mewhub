@@ -176,12 +176,11 @@ class _ProviderCard extends StatelessWidget {
                 ],
               ),
             ),
-            p.isZako
-                ? const AlwaysEnabledBadge()
-                : Switch(
-                    value: p.enabled,
-                    onChanged: (v) => store.upsertProvider(p.copyWith(enabled: v)),
-                  ),
+            if (!p.isZako)
+              Switch(
+                value: p.enabled,
+                onChanged: (v) => store.upsertProvider(p.copyWith(enabled: v)),
+              ),
           ],
         ),
       ),

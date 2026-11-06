@@ -326,7 +326,7 @@ class ComposerState extends State<Composer> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 11, 0),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -340,7 +340,7 @@ class ComposerState extends State<Composer> {
                           onSubmitted: s.display.sendOnEnter ? (_) => _send() : null,
                           style: TextStyle(fontSize: 15.5 * s.display.fontScale, height: 1.45),
                           decoration: InputDecoration(
-                            hintText: _listening ? t('正在聆听…', 'Listening…') : t('和 Mew 说点什么…', 'Message Mew…'),
+                            hintText: _listening ? t('正在聆听…', 'Listening…') : t('和 MewBot 说点什么…', 'Message MewBot…'),
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,

@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../../core/attachments.dart';
 import '../../core/i18n.dart';
 import '../../core/util.dart';
+import '../../data/chat_folder.dart';
 import '../../data/database.dart';
-import '../../data/defaults.dart';
 import '../../state/app_state.dart';
 import '../../state/settings_store.dart';
 import '../widgets/common.dart';
@@ -24,16 +24,11 @@ class ChatDrawer extends StatefulWidget {
 }
 
 class _ChatDrawerState extends State<ChatDrawer> {
-  String _q = '';
-  bool _allAssistants = false;
-  bool _searchOpen = false;
-  bool _sortByTitle = false;
-  final _searchFocus = FocusNode();
+  String? _selectedFolderId;
   final _historyScroll = ScrollController();
 
   @override
   void dispose() {
-    _searchFocus.dispose();
     _historyScroll.dispose();
     super.dispose();
   }
@@ -42,21 +37,7 @@ class _ChatDrawerState extends State<ChatDrawer> {
     if (!widget.embedded) Navigator.of(context).maybePop();
   }
 
-  void _toggleSearch() {
-    final next = !_searchOpen;
-    setState(() {
-      _searchOpen = next;
-      if (!next) _q = '';
-    });
-    if (next) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _searchFocus.requestFocus();
-      });
-    }
-  }
-
-  void _showHistory() {
-    setState(() => _q = '');
+  void _scrollToTop() {
     if (_historyScroll.hasClients) {
       _historyScroll.animateTo(0, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic);
     }
@@ -65,6 +46,79 @@ class _ChatDrawerState extends State<ChatDrawer> {
   void _navigate(String route) {
     _close();
     Navigator.of(context).pushNamed(route);
+  }
+
+  Future<void> _createFolder(AppState app) async {
+    final name = await promptText(context, t('新建文件夹', 'Create folder'));
+    if (name == null || !mounted) return;
+    final folder = app.createChatFolder(name);
+    if (folder == null) {
+      toast(context, t('文件夹名称不能为空或已存在', 'Folder name is empty or already exists'), error: true);
+      return;
+    }
+    setState(() => _selectedFolderId = folder.id);
+  }
+
+  Future<void> _renameFolder(AppState app, ChatFolder folder) async {
+    final name = await promptText(context, t('重命名文件夹', 'Rename folder'), initial: folder.name);
+    if (name == null || !mounted) return;
+    if (!app.renameChatFolder(folder, name)) {
+      toast(context, t('文件夹名称不能为空或已存在', 'Folder name is empty or already exists'), error: true);
+    }
+  }
+
+  Future<void> _deleteFolder(AppState app, ChatFolder folder) async {
+    if (!await confirm(
+      context,
+      t('删除文件夹？其中的对话将移回聊天列表。', 'Delete folder? Its chats will move to Chats.'),
+      destructive: true,
+    )) {
+      return;
+    }
+    if (!await app.deleteChatFolder(folder)) {
+      if (mounted) {
+        toast(context, t('请等待当前回复完成后再删除文件夹', 'Wait for the reply to finish before deleting the folder'), error: true);
+      }
+      return;
+    }
+    if (mounted && _selectedFolderId == folder.id) setState(() => _selectedFolderId = null);
+  }
+
+  Future<void> _moveToFolder(AppState app, ConversationSummary conversation) async {
+    final folders = context
+        .read<SettingsStore>()
+        .value
+        .chatFolders
+        .where((folder) => folder.assistantId == conversation.assistantId)
+        .toList();
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(title: Text(t('移动到文件夹', 'Move to folder'))),
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline_rounded),
+              title: Text(t('聊天', 'Chats')),
+              onTap: () {
+                Navigator.pop(sheet);
+                app.moveConversationToFolder(conversation.id, null);
+              },
+            ),
+            for (final folder in folders)
+              ListTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: Text(folder.name),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  app.moveConversationToFolder(conversation.id, folder.id);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _bucket(DateTime d) {
@@ -101,11 +155,7 @@ class _ChatDrawerState extends State<ChatDrawer> {
                 Row(
                   children: [
                     ClipOval(
-                      child: AvatarView(
-                        value: avatar.isEmpty ? defaultAssistantAvatar : avatar,
-                        fallback: name.text.isEmpty ? 'MewHub' : name.text,
-                        size: 68,
-                      ),
+                      child: AvatarView(value: avatar, fallback: name.text.isEmpty ? 'Mew' : name.text, size: 68),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -160,24 +210,24 @@ class _ChatDrawerState extends State<ChatDrawer> {
     final s = context.watch<SettingsStore>().value;
     final scheme = Theme.of(context).colorScheme;
     final current = app.chat.conversation.id;
-    final q = _q.trim().toLowerCase();
+    final folders = s.chatFolders.where((f) => f.assistantId == s.currentAssistantId).toList();
+    if (_selectedFolderId != null && !folders.any((f) => f.id == _selectedFolderId)) {
+      _selectedFolderId = null;
+    }
     final list = app.conversations
-        .where((c) => _allAssistants || c.assistantId == s.currentAssistantId)
-        .where((c) => q.isEmpty || c.title.toLowerCase().contains(q) || c.preview.toLowerCase().contains(q))
+        .where((c) => c.assistantId == s.currentAssistantId)
+        .where((c) => c.folder == _selectedFolderId)
         .toList();
     list.sort((a, b) {
-      if (_sortByTitle) {
-        final aTitle = a.title.isEmpty ? a.preview : a.title;
-        final bTitle = b.title.isEmpty ? b.preview : b.title;
-        return aTitle.toLowerCase().compareTo(bTitle.toLowerCase());
-      }
-      return b.updatedAt.compareTo(a.updatedAt);
+      final aDate = s.display.conversationSortByCreation ? a.createdAt : a.updatedAt;
+      final bDate = s.display.conversationSortByCreation ? b.createdAt : b.updatedAt;
+      return bDate.compareTo(aDate);
     });
     final pinned = list.where((c) => c.pinned).toList();
     final rest = list.where((c) => !c.pinned).toList();
     final groups = <String, List<ConversationSummary>>{};
     for (final c in rest) {
-      groups.putIfAbsent(_bucket(c.updatedAt), () => []).add(c);
+      groups.putIfAbsent(_bucket(s.display.conversationSortByCreation ? c.createdAt : c.updatedAt), () => []).add(c);
     }
 
     final items = <Widget>[];
@@ -205,56 +255,28 @@ class _ChatDrawerState extends State<ChatDrawer> {
             avatar: s.display.userAvatar,
             onTap: () => _editProfile(context.read<SettingsStore>()),
           ),
-          const SizedBox(height: 8),
-          SidebarQuickLinks(
-            searchOpen: _searchOpen,
-            onHistory: _showHistory,
-            onSearch: _toggleSearch,
-            onImages: () => _navigate('/imagegen'),
-            onTranslate: () => _navigate('/translator'),
-          ),
-          if (_searchOpen)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 5, 14, 2),
-              child: TextField(
-                key: const ValueKey('sidebar-search-field'),
-                focusNode: _searchFocus,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  hintText: t('搜索对话', 'Search chats'),
-                  isDense: true,
-                  filled: true,
-                  fillColor: scheme.surfaceContainerLowest,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onChanged: (v) => setState(() => _q = v),
-              ),
-            ),
+          const SidebarTodayUsage(),
           SidebarChatToolbar(
-            allAssistants: _allAssistants,
-            sortByTitle: _sortByTitle,
-            onNewChat: () {
-              app.newChat();
-              _close();
+            folders: folders,
+            selectedFolderId: _selectedFolderId,
+            sortByCreation: s.display.conversationSortByCreation,
+            onNewFolder: () => _createFolder(app),
+            onSelectFolder: (id) {
+              setState(() => _selectedFolderId = id);
+              _scrollToTop();
             },
-            onToggleAssistants: () => setState(() => _allAssistants = !_allAssistants),
-            onToggleSort: () => setState(() => _sortByTitle = !_sortByTitle),
+            onRenameFolder: (folder) => _renameFolder(app, folder),
+            onDeleteFolder: (folder) => _deleteFolder(app, folder),
+            onSortChanged: (created) {
+              context.read<SettingsStore>().update(
+                (s) => s.copyWith(display: s.display.copyWith(conversationSortByCreation: created)),
+              );
+              _scrollToTop();
+            },
           ),
           Expanded(
             child: items.isEmpty
-                ? EmptyState(
-                    icon: Icons.forum_outlined,
-                    title: q.isEmpty ? t('还没有对话', 'No chats yet') : t('没有匹配的对话', 'No matches'),
-                  )
+                ? EmptyState(icon: Icons.forum_outlined, title: t('还没有对话', 'No chats yet'))
                 : ListView(controller: _historyScroll, padding: const EdgeInsets.fromLTRB(8, 0, 8, 8), children: items),
           ),
           const Divider(height: 1),
@@ -340,6 +362,14 @@ class _ChatDrawerState extends State<ChatDrawer> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.drive_file_move_outline),
+              title: Text(t('移动到文件夹', 'Move to folder')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _moveToFolder(app, c);
+              },
+            ),
+            ListTile(
               leading: Icon(Icons.delete_outline_rounded, color: Theme.of(ctx).colorScheme.error),
               title: Text(t('删除', 'Delete'), style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
               onTap: () async {
@@ -405,7 +435,7 @@ class _AssistantHeader extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    a.name.isEmpty ? 'Mew' : a.name,
+                    a.name.isEmpty ? 'MewBot' : a.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
@@ -440,7 +470,7 @@ class _AssistantHeader extends StatelessWidget {
                   index: i,
                   child: ListTile(
                     leading: AvatarView(value: list[i].avatar, fallback: list[i].name),
-                    title: Text(list[i].name.isEmpty ? 'Mew' : list[i].name),
+                    title: Text(list[i].name.isEmpty ? 'MewBot' : list[i].name),
                     subtitle: list[i].systemPrompt.isEmpty
                         ? null
                         : Text(list[i].systemPrompt, maxLines: 1, overflow: TextOverflow.ellipsis),

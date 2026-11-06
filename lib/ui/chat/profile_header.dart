@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../data/defaults.dart';
 import '../../core/i18n.dart';
 import '../widgets/common.dart';
 
@@ -13,7 +12,7 @@ class UserProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayName = name.trim().isEmpty ? 'MewHub' : name.trim();
+    final displayName = name.trim().isEmpty ? 'Mew' : name.trim();
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
@@ -31,11 +30,7 @@ class UserProfileHeader extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: [
                     ClipOval(
-                      child: AvatarView(
-                        value: avatar.isEmpty ? defaultAssistantAvatar : avatar,
-                        fallback: displayName,
-                        size: 58,
-                      ),
+                      child: AvatarView(value: avatar, fallback: displayName, size: 58),
                     ),
                     Positioned(
                       right: -2,

@@ -215,6 +215,14 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
         run: |
           {
+            echo "## 更新内容"
+            echo
+            echo "- 侧栏改为今日 Token 用量卡片，支持聊天文件夹与按更新时间/创建时间排序。"
+            echo "- 用量统计自动检查新版本，并显示最多五行的 Release 更新日志。"
+            echo "- 个人资料默认名称改为 Mew，默认助手改为 MewBot，头像裁切改为圆形填充。"
+            echo "- 移除 Zako AI 的锁定标识，调整全屏编辑按钮对齐。"
+            echo "- 备份补全收藏、文件夹与排序设置，并修复无密钥备份的凭据处理。"
+            echo
             echo "## 📦 Downloads"
             echo
             echo "| Platform | File |"
@@ -234,7 +242,7 @@ jobs:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: MewHub ${{ needs.meta.outputs.tag }}
           body_path: notes.md
-          generate_release_notes: true
+          generate_release_notes: false
           prerelease: ${{ needs.meta.outputs.prerelease }}
           fail_on_unmatched_files: true
           files: |

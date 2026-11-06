@@ -14,7 +14,7 @@ import 'models_misc.dart';
 import 'settings.dart';
 
 /// ZIP backup: settings.json + conversations.jsonl + memories.json +
-/// usage.json + files/ avatars/ backgrounds/.
+/// favorites.json + usage.json + app_launches.json + files/ avatars/ backgrounds/.
 class BackupService {
   BackupService(this.db);
   final AppDatabase db;
@@ -55,6 +55,19 @@ class BackupService {
     );
     addText('usage.json', jsonEncode(await db.rawUsage()));
     addText('app_launches.json', jsonEncode(await db.rawAppLaunches()));
+    addText(
+      'favorites.json',
+      jsonEncode([
+        for (final favorite in await db.favorites())
+          {
+            'id': favorite.id,
+            'conversationId': favorite.conversationId,
+            'messageId': favorite.messageId,
+            'snapshot': favorite.snapshot,
+            'createdAt': favorite.createdAt.millisecondsSinceEpoch,
+          },
+      ]),
+    );
     if (includeFiles) {
       for (final dir in [AppPaths.files, AppPaths.avatars, AppPaths.backgrounds]) {
         if (!await dir.exists()) continue;
@@ -89,15 +102,7 @@ class BackupService {
     var settings = current;
     if (settingsJson != null) {
       settings = AppSettings.fromJson(asMap(jsonDecode(settingsJson)));
-      if (manifest['secrets'] != true) {
-        final keys = {for (final p in current.providers) p.id: p.apiKey};
-        settings = settings.copyWith(
-          providers: [
-            for (final p in settings.providers)
-              p.apiKey.isEmpty && keys[p.id] != null ? p.copyWith(apiKey: keys[p.id]) : p,
-          ],
-        );
-      }
+      if (manifest['secrets'] != true) settings = preserveLocalSecrets(settings, current);
     }
     final conv = text('conversations.jsonl') ?? '';
     for (final line in const LineSplitter().convert(conv)) {
@@ -113,6 +118,18 @@ class BackupService {
           content: asStr(mm['content']),
           createdAt: dateFromMs(mm['createdAt']),
           updatedAt: dateFromMs(mm['updatedAt']),
+        ),
+      );
+    }
+    for (final favorite in asList(tryJsonDecode(text('favorites.json') ?? '[]'))) {
+      final data = asMap(favorite);
+      await db.addFavorite(
+        FavoriteItem(
+          id: asStrOrNull(data['id']),
+          conversationId: asStr(data['conversationId']),
+          messageId: asStr(data['messageId']),
+          snapshot: asStr(data['snapshot']),
+          createdAt: dateFromMs(data['createdAt']),
         ),
       );
     }
@@ -139,6 +156,44 @@ class BackupService {
       await out.writeAsBytes(f.content);
     }
     return settings;
+  }
+
+  /// Keep credentials already stored on this device when restoring a backup
+  /// deliberately exported without secrets. IDs prevent applying a key to a
+  /// different provider, service, MCP server, or proxy.
+  static AppSettings preserveLocalSecrets(AppSettings restored, AppSettings current) {
+    final providerKeys = {for (final item in current.providers) item.id: item.apiKey};
+    final searchKeys = {for (final item in current.searchServices) item.id: item.apiKey};
+    final mcpHeaders = {for (final item in current.mcpServers) item.id: item.headers};
+    final proxyUrls = {for (final item in current.proxies) item.id: item.url};
+    return restored.copyWith(
+      providers: [
+        for (final item in restored.providers)
+          item.apiKey.isEmpty && (providerKeys[item.id]?.isNotEmpty ?? false)
+              ? item.copyWith(apiKey: providerKeys[item.id])
+              : item,
+      ],
+      searchServices: [
+        for (final item in restored.searchServices)
+          item.apiKey.isEmpty && (searchKeys[item.id]?.isNotEmpty ?? false)
+              ? item.copyWith(apiKey: searchKeys[item.id])
+              : item,
+      ],
+      mcpServers: [
+        for (final item in restored.mcpServers)
+          item.headers.isEmpty && (mcpHeaders[item.id]?.isNotEmpty ?? false)
+              ? item.copyWith(headers: mcpHeaders[item.id])
+              : item,
+      ],
+      webDav: restored.webDav.password.isEmpty && current.webDav.password.isNotEmpty
+          ? restored.webDav.copyWith(password: current.webDav.password)
+          : restored.webDav,
+      proxies: [
+        for (final item in restored.proxies)
+          item.url.isEmpty && (proxyUrls[item.id]?.isNotEmpty ?? false) ? item.copyWith(url: proxyUrls[item.id]) : item,
+      ],
+      proxy: restored.proxy.isEmpty ? current.proxy : restored.proxy,
+    );
   }
 }
 

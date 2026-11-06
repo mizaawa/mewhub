@@ -11,9 +11,9 @@ void main() {
 
     var historyOpened = false;
     var searchOpened = false;
-    var newChatCreated = false;
-    var assistantsToggled = false;
-    var sortToggled = false;
+    var folderCreated = false;
+    var sortByCreation = false;
+    String? selectedFolder;
     final destinations = <String>[];
 
     await tester.pumpWidget(
@@ -29,11 +29,14 @@ void main() {
                 onTranslate: () => destinations.add('/translator'),
               ),
               SidebarChatToolbar(
-                allAssistants: false,
-                sortByTitle: false,
-                onNewChat: () => newChatCreated = true,
-                onToggleAssistants: () => assistantsToggled = true,
-                onToggleSort: () => sortToggled = true,
+                folders: const [],
+                selectedFolderId: null,
+                sortByCreation: false,
+                onNewFolder: () => folderCreated = true,
+                onSelectFolder: (id) => selectedFolder = id,
+                onRenameFolder: (_) {},
+                onDeleteFolder: (_) {},
+                onSortChanged: (created) => sortByCreation = created,
               ),
               SidebarBottomActions(onNavigate: destinations.add),
             ],
@@ -51,16 +54,18 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('sidebar-history-search')));
     await tester.tap(find.byKey(const ValueKey('sidebar-media')));
     await tester.tap(find.byKey(const ValueKey('sidebar-translate')));
-    await tester.tap(find.byKey(const ValueKey('sidebar-new-chat')));
-    await tester.tap(find.byKey(const ValueKey('sidebar-assistant-filter')));
+    await tester.tap(find.byKey(const ValueKey('sidebar-new-folder')));
     await tester.tap(find.byKey(const ValueKey('sidebar-sort')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('按创建时间'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('sidebar-nav-settings')));
 
     expect(historyOpened, isTrue);
     expect(searchOpened, isTrue);
-    expect(newChatCreated, isTrue);
-    expect(assistantsToggled, isTrue);
-    expect(sortToggled, isTrue);
+    expect(folderCreated, isTrue);
+    expect(sortByCreation, isTrue);
+    expect(selectedFolder, isNull);
     expect(destinations, contains('/settings'));
     expect(destinations, contains('/imagegen'));
     expect(destinations, contains('/translator'));

@@ -95,27 +95,3 @@ class OfficialProviderTag extends StatelessWidget {
     );
   }
 }
-
-class AlwaysEnabledBadge extends StatelessWidget {
-  const AlwaysEnabledBadge({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-      decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.lock_outline_rounded, size: 15, color: scheme.onPrimaryContainer),
-          const SizedBox(width: 5),
-          Text(
-            t('始终启用', 'Always on'),
-            style: TextStyle(color: scheme.onPrimaryContainer, fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-}

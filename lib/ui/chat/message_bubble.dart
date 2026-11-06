@@ -279,7 +279,7 @@ class MessageBubble extends StatelessWidget {
         const SizedBox(width: 8),
         Flexible(
           child: Text(
-            name.isEmpty ? 'Mew' : name,
+            name.isEmpty ? 'MewBot' : name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),

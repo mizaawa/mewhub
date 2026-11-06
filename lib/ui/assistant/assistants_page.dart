@@ -119,7 +119,7 @@ class _AssistantCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              a.name.isEmpty ? 'Mew' : a.name,
+              a.name.isEmpty ? 'MewBot' : a.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleSmall,

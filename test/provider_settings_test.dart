@@ -59,7 +59,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Zako AI'), findsOneWidget);
       expect(find.text('官方'), findsOneWidget);
-      expect(find.byType(AlwaysEnabledBadge), findsOneWidget);
+      expect(find.text('始终启用'), findsNothing);
       expect(tester.getTopLeft(find.text('Zako AI')).dy, lessThan(tester.getTopLeft(find.text('OpenAI')).dy));
       expect(find.byType(ProviderLogo), findsWidgets);
       final logo = tester.widget<ProviderLogo>(find.byType(ProviderLogo).first);
@@ -87,8 +87,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('前往 Zako AI'), findsOneWidget);
       expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
-      expect(find.text('始终启用'), findsOneWidget);
-      expect(find.text('官方供应商无法停用'), findsOneWidget);
+      expect(find.text('始终启用'), findsNothing);
+      expect(find.text('官方供应商无法停用'), findsNothing);
       expect(find.widgetWithText(SwitchListTile, '启用'), findsNothing);
       expect(tester.getTopLeft(find.text('前往 Zako AI')).dy, lessThan(tester.getTopLeft(find.text('基本')).dy));
       expect(find.text(zakoBaseUrl), findsOneWidget);

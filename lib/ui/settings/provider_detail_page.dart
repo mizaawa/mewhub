@@ -303,14 +303,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
             SettingsGroup(
               title: t('基本', 'Basics'),
               children: [
-                if (_p.isZako)
-                  ListTile(
-                    leading: const IconBadge(Icons.lock_outline_rounded),
-                    title: Text(t('始终启用', 'Always enabled')),
-                    subtitle: Text(t('官方供应商无法停用', 'Official provider cannot be disabled')),
-                    trailing: Icon(Icons.verified_rounded, color: scheme.primary),
-                  )
-                else
+                if (!_p.isZako)
                   SwitchListTile(
                     secondary: const IconBadge(Icons.power_settings_new_rounded),
                     title: Text(t('启用', 'Enabled')),

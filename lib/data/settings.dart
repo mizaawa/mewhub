@@ -2,6 +2,7 @@ import '../ai/provider_config.dart';
 import '../core/i18n.dart';
 import '../core/util.dart';
 import 'assistant.dart';
+import 'chat_folder.dart';
 import 'defaults.dart';
 import 'models_misc.dart';
 import 'network_settings.dart';
@@ -13,8 +14,9 @@ enum ChatFont { system, serif, mono }
 
 class DisplaySettings {
   const DisplaySettings({
-    this.userName = '',
+    this.userName = 'Mew',
     this.userAvatar = '',
+    this.conversationSortByCreation = false,
     this.showUserAvatar = true,
     this.showModelName = true,
     this.showTokenUsage = true,
@@ -39,6 +41,7 @@ class DisplaySettings {
 
   final String userName;
   final String userAvatar;
+  final bool conversationSortByCreation;
   final bool showUserAvatar;
   final bool showModelName;
   final bool showTokenUsage;
@@ -63,6 +66,7 @@ class DisplaySettings {
   DisplaySettings copyWith({
     String? userName,
     String? userAvatar,
+    bool? conversationSortByCreation,
     bool? showUserAvatar,
     bool? showModelName,
     bool? showTokenUsage,
@@ -86,6 +90,7 @@ class DisplaySettings {
   }) => DisplaySettings(
     userName: userName ?? this.userName,
     userAvatar: userAvatar ?? this.userAvatar,
+    conversationSortByCreation: conversationSortByCreation ?? this.conversationSortByCreation,
     showUserAvatar: showUserAvatar ?? this.showUserAvatar,
     showModelName: showModelName ?? this.showModelName,
     showTokenUsage: showTokenUsage ?? this.showTokenUsage,
@@ -109,8 +114,9 @@ class DisplaySettings {
   );
 
   factory DisplaySettings.fromJson(Map<String, dynamic> j) => DisplaySettings(
-    userName: asStr(j['userName']),
+    userName: asStr(j['userName']).trim().isEmpty || asStr(j['userName']) == 'MewHub' ? 'Mew' : asStr(j['userName']),
     userAvatar: asStr(j['userAvatar']),
+    conversationSortByCreation: asBool(j['conversationSortByCreation']),
     showUserAvatar: asBool(j['showUserAvatar'], true),
     showModelName: asBool(j['showModelName'], true),
     showTokenUsage: asBool(j['showTokenUsage'], true),
@@ -136,6 +142,7 @@ class DisplaySettings {
   Map<String, dynamic> toJson() => {
     'userName': userName,
     'userAvatar': userAvatar,
+    'conversationSortByCreation': conversationSortByCreation,
     'showUserAvatar': showUserAvatar,
     'showModelName': showModelName,
     'showTokenUsage': showTokenUsage,
@@ -211,6 +218,7 @@ class AppSettings {
     this.lorebooks = const [],
     this.modes = const [],
     this.quickMessages = const [],
+    this.chatFolders = const [],
     this.display = const DisplaySettings(),
     this.tts = const TtsSettings(),
     this.webDav = const WebDavConfig(),
@@ -253,6 +261,7 @@ class AppSettings {
   final List<Lorebook> lorebooks;
   final List<ModeInjection> modes;
   final List<QuickMessage> quickMessages;
+  final List<ChatFolder> chatFolders;
   final DisplaySettings display;
   final TtsSettings tts;
   final WebDavConfig webDav;
@@ -331,6 +340,7 @@ class AppSettings {
     List<Lorebook>? lorebooks,
     List<ModeInjection>? modes,
     List<QuickMessage>? quickMessages,
+    List<ChatFolder>? chatFolders,
     DisplaySettings? display,
     TtsSettings? tts,
     WebDavConfig? webDav,
@@ -372,6 +382,7 @@ class AppSettings {
     lorebooks: lorebooks ?? this.lorebooks,
     modes: modes ?? this.modes,
     quickMessages: quickMessages ?? this.quickMessages,
+    chatFolders: chatFolders ?? this.chatFolders,
     display: display ?? this.display,
     tts: tts ?? this.tts,
     webDav: webDav ?? this.webDav,
@@ -393,8 +404,11 @@ class AppSettings {
     final loadedAssistants = assistants.isEmpty ? defaultAssistants() : assistants;
     final list = [
       for (final assistant in loadedAssistants)
-        if (assistant.id == defaultAssistantId && assistant.avatar == '🐱')
-          assistant.copyWith(avatar: defaultAssistantAvatar)
+        if (assistant.id == defaultAssistantId)
+          assistant.copyWith(
+            name: assistant.name == 'Mew' ? 'MewBot' : assistant.name,
+            avatar: assistant.avatar == '🐱' ? defaultAssistantAvatar : assistant.avatar,
+          )
         else
           assistant,
     ];
@@ -430,6 +444,7 @@ class AppSettings {
       lorebooks: mapList(j['lorebooks'], Lorebook.fromJson),
       modes: j['modes'] == null ? defaultModes() : mapList(j['modes'], ModeInjection.fromJson),
       quickMessages: mapList(j['quickMessages'], QuickMessage.fromJson),
+      chatFolders: mapList(j['chatFolders'], ChatFolder.fromJson),
       display: DisplaySettings.fromJson(asMap(j['display'])),
       tts: TtsSettings.fromJson(asMap(j['tts'])),
       webDav: WebDavConfig.fromJson(asMap(j['webDav'])),
@@ -471,12 +486,13 @@ class AppSettings {
     'autoTitle': autoTitle,
     'suggestions': suggestions,
     'favoriteModelIds': favoriteModelIds,
-    'searchServices': searchServices.map((e) => e.toJson()).toList(),
+    'searchServices': searchServices.map((e) => withSecrets ? e.toJson() : e.copyWith(apiKey: '').toJson()).toList(),
     'searchServiceIndex': searchServiceIndex,
-    'mcpServers': mcpServers.map((e) => e.toJson()).toList(),
+    'mcpServers': mcpServers.map((e) => withSecrets ? e.toJson() : e.copyWith(headers: const {}).toJson()).toList(),
     'lorebooks': lorebooks.map((e) => e.toJson()).toList(),
     'modes': modes.map((e) => e.toJson()).toList(),
     'quickMessages': quickMessages.map((e) => e.toJson()).toList(),
+    'chatFolders': chatFolders.map((e) => e.toJson()).toList(),
     'display': display.toJson(),
     'tts': tts.toJson(),
     'webDav': withSecrets ? webDav.toJson() : webDav.copyWith(password: '').toJson(),

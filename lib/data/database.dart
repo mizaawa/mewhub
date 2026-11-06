@@ -15,6 +15,7 @@ class ConversationSummary {
     required this.title,
     required this.pinned,
     required this.updatedAt,
+    required this.createdAt,
     required this.preview,
     this.folder,
   });
@@ -24,6 +25,7 @@ class ConversationSummary {
   final String title;
   final bool pinned;
   final DateTime updatedAt;
+  final DateTime createdAt;
   final String preview;
   final String? folder;
 }
@@ -145,7 +147,7 @@ class AppDatabase {
   Future<List<ConversationSummary>> listConversations({String? assistantId, int limit = 500, int offset = 0}) async {
     final rows = await _db.query(
       'conversations',
-      columns: ['id', 'assistant_id', 'title', 'pinned', 'updated_at', 'preview', 'folder'],
+      columns: ['id', 'assistant_id', 'title', 'pinned', 'created_at', 'updated_at', 'preview', 'folder'],
       where: assistantId == null ? null : 'assistant_id = ?',
       whereArgs: assistantId == null ? null : [assistantId],
       orderBy: 'pinned DESC, updated_at DESC',
@@ -161,6 +163,7 @@ class AppDatabase {
     title: r['title'] as String,
     pinned: (r['pinned'] as int) == 1,
     updatedAt: DateTime.fromMillisecondsSinceEpoch(r['updated_at'] as int),
+    createdAt: DateTime.fromMillisecondsSinceEpoch(r['created_at'] as int),
     preview: r['preview'] as String,
     folder: r['folder'] as String?,
   );
@@ -235,7 +238,7 @@ class AppDatabase {
   Future<List<ConversationSummary>> recent(String assistantId, {String? excludeId, int limit = 10}) async {
     final rows = await _db.query(
       'conversations',
-      columns: ['id', 'assistant_id', 'title', 'pinned', 'updated_at', 'preview', 'folder'],
+      columns: ['id', 'assistant_id', 'title', 'pinned', 'created_at', 'updated_at', 'preview', 'folder'],
       where: excludeId == null ? 'assistant_id = ?' : 'assistant_id = ? AND id != ?',
       whereArgs: excludeId == null ? [assistantId] : [assistantId, excludeId],
       orderBy: 'updated_at DESC',

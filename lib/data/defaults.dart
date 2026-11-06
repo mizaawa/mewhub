@@ -65,7 +65,7 @@ const learningModePrompt = '''The user is STUDYING and asked you to follow these
 Never solve homework outright. Work through problems one step at a time, asking one question per step.''';
 
 List<Assistant> defaultAssistants() => [
-  Assistant(id: defaultAssistantId, name: 'Mew', avatar: defaultAssistantAvatar, systemPrompt: ''),
+  Assistant(id: defaultAssistantId, name: 'MewBot', avatar: defaultAssistantAvatar, systemPrompt: ''),
   Assistant(
     name: '翻译官 Translator',
     avatar: '🌐',

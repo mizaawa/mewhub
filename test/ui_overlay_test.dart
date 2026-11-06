@@ -109,4 +109,20 @@ void main() {
     expect(sent, ['draft\nline two']);
     expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
   });
+
+  testWidgets('full-screen editor button aligns with the send button', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: _composer(onSend: (_) async {}),
+          ),
+        ),
+      ),
+    );
+    final expandX = tester.getCenter(find.byIcon(Icons.open_in_full_rounded)).dx;
+    final sendX = tester.getCenter(find.byIcon(Icons.arrow_upward_rounded)).dx;
+    expect((expandX - sendX).abs(), lessThanOrEqualTo(1));
+  });
 }

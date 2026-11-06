@@ -6,6 +6,7 @@ import '../ai/message.dart';
 import '../chat/chat_controller.dart';
 import '../chat/helpers.dart';
 import '../data/conversation.dart';
+import '../data/chat_folder.dart';
 import '../data/database.dart';
 import '../tools/mcp.dart';
 import 'notifications.dart';
@@ -118,6 +119,57 @@ class AppState extends ChangeNotifier {
       if (c != null) await db.saveConversation(c.copyWith(title: title));
     }
     await refreshList();
+  }
+
+  ChatFolder? createChatFolder(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    final assistantId = store.value.currentAssistantId;
+    if (store.value.chatFolders.any(
+      (f) => f.assistantId == assistantId && f.name.toLowerCase() == trimmed.toLowerCase(),
+    )) {
+      return null;
+    }
+    final folder = ChatFolder(assistantId: assistantId, name: trimmed);
+    store.update((s) => s.copyWith(chatFolders: [...s.chatFolders, folder]));
+    return folder;
+  }
+
+  bool renameChatFolder(ChatFolder folder, String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty ||
+        store.value.chatFolders.any(
+          (f) =>
+              f.id != folder.id && f.assistantId == folder.assistantId && f.name.toLowerCase() == trimmed.toLowerCase(),
+        )) {
+      return false;
+    }
+    store.update(
+      (s) =>
+          s.copyWith(chatFolders: [for (final f in s.chatFolders) f.id == folder.id ? f.copyWith(name: trimmed) : f]),
+    );
+    return true;
+  }
+
+  Future<bool> deleteChatFolder(ChatFolder folder) async {
+    if (_chat?.generating == true && _chat?.conversation.folder == folder.id) return false;
+    for (final c in await db.allConversations().toList()) {
+      if (c.folder == folder.id) await moveConversationToFolder(c.id, null, refresh: false);
+    }
+    store.update((s) => s.copyWith(chatFolders: s.chatFolders.where((f) => f.id != folder.id).toList()));
+    await refreshList();
+    return true;
+  }
+
+  Future<void> moveConversationToFolder(String conversationId, String? folderId, {bool refresh = true}) async {
+    final c = await db.getConversation(conversationId);
+    if (c == null) return;
+    final changed = c.copyWith(folder: folderId);
+    await db.saveConversation(changed);
+    if (_chat?.conversation.id == conversationId) {
+      _chat!.applyExternal((_) => changed);
+    }
+    if (refresh) await refreshList();
   }
 
   Future<void> toggleFavorite(Conversation c, ChatMessage m) async {

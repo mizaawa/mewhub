@@ -3,18 +3,23 @@ import 'dart:math' as math;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/i18n.dart';
+import '../../core/release_update.dart';
 import '../../data/usage_statistics.dart';
 import '../../state/app_state.dart';
 import '../export.dart';
 import '../widgets/common.dart';
 
 class StatsPage extends StatefulWidget {
-  const StatsPage({super.key, this.statistics});
+  const StatsPage({super.key, this.statistics, this.releaseUpdate});
 
   /// Injecting a snapshot makes the visual states testable without SQLite.
   final UsageStatistics? statistics;
+
+  /// An injected result keeps release display testable without a network call.
+  final Future<ReleaseUpdate?>? releaseUpdate;
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -22,6 +27,7 @@ class StatsPage extends StatefulWidget {
 
 class _StatsPageState extends State<StatsPage> {
   late Future<UsageStatistics> _future;
+  late Future<ReleaseUpdate?> _releaseFuture;
   int? _days = 30;
   DateTimeRange? _range;
   DateTime? _selectedDay;
@@ -30,13 +36,17 @@ class _StatsPageState extends State<StatsPage> {
   void initState() {
     super.initState();
     _future = _load();
+    _releaseFuture = widget.releaseUpdate ?? checkForReleaseUpdate();
   }
 
   Future<UsageStatistics> _load() =>
       widget.statistics == null ? context.read<AppState>().db.usageStatistics() : Future.value(widget.statistics!);
 
   Future<void> _refresh() async {
-    setState(() => _future = _load());
+    setState(() {
+      _future = _load();
+      _releaseFuture = widget.releaseUpdate ?? checkForReleaseUpdate();
+    });
     await _future;
   }
 
@@ -122,6 +132,15 @@ class _StatsPageState extends State<StatsPage> {
                         _Metric(Icons.rocket_launch_outlined, t('应用启动次数', 'App launches'), data.launches.toString()),
                       ]),
                       const SizedBox(height: 24),
+                      FutureBuilder<ReleaseUpdate?>(
+                        future: _releaseFuture,
+                        builder: (context, release) => release.data == null
+                            ? const SizedBox.shrink()
+                            : Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: _ReleaseNotice(release: release.data!),
+                              ),
+                      ),
                       Text(t('Token 用量', 'Token usage'), style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 8),
                       Wrap(
@@ -193,6 +212,119 @@ class _StatsPageState extends State<StatsPage> {
         );
       },
     ),
+  );
+}
+
+class _ReleaseNotice extends StatelessWidget {
+  const _ReleaseNotice({required this.release});
+
+  final ReleaseUpdate release;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final version = release.version.startsWith('v') ? release.version : 'v${release.version}';
+    return Material(
+      key: const ValueKey('release-update-notice'),
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () async {
+          try {
+            await launchUrl(release.url, mode: LaunchMode.externalApplication);
+          } catch (_) {
+            // A missing browser must not affect the statistics dashboard.
+          }
+        },
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [scheme.primaryContainer, scheme.tertiaryContainer],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: scheme.primary.withValues(alpha: 0.18)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.new_releases_rounded, size: 20, color: scheme.onPrimaryContainer),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t('有新版本 $version', 'New version $version'),
+                        style: Theme.of(context).textTheme.titleSmall
+                            ?.copyWith(color: scheme.onPrimaryContainer, fontWeight: FontWeight.w700),
+                      ),
+                      if (release.notes.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _ReleaseNotes(
+                          notes: release.notes,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onPrimaryContainer),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.open_in_new_rounded, size: 16, color: scheme.onPrimaryContainer),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Fits the exact six-dot suffix into line five when release notes overflow.
+class _ReleaseNotes extends StatelessWidget {
+  const _ReleaseNotes({required this.notes, required this.style});
+
+  final String notes;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final direction = Directionality.of(context);
+      final scaler = MediaQuery.textScalerOf(context);
+      bool fits(String text) {
+        final painter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          textDirection: direction,
+          textScaler: scaler,
+          maxLines: 5,
+        )..layout(maxWidth: constraints.maxWidth);
+        final result = !painter.didExceedMaxLines;
+        painter.dispose();
+        return result;
+      }
+
+      var shown = notes;
+      if (!fits(notes)) {
+        final codepoints = notes.runes.toList();
+        var low = 0;
+        var high = codepoints.length;
+        while (low < high) {
+          final mid = (low + high + 1) ~/ 2;
+          final candidate = '${String.fromCharCodes(codepoints.take(mid))}......';
+          if (fits(candidate)) {
+            low = mid;
+          } else {
+            high = mid - 1;
+          }
+        }
+        shown = '${String.fromCharCodes(codepoints.take(low)).trimRight()}......';
+      }
+      return Text(shown, maxLines: 5, overflow: TextOverflow.clip, style: style);
+    },
   );
 }
 
