@@ -19,7 +19,7 @@ class EncodedImage {
 class MediaEncoder {
   static final Map<String, EncodedImage> _cache = {};
 
-  static Future<EncodedImage?> encodeImage(String url) async {
+  static Future<EncodedImage?> encodeImage(String url, {String? providerId}) async {
     final cached = _cache[url];
     if (cached != null) return cached;
     EncodedImage? out;
@@ -30,7 +30,7 @@ class MediaEncoder {
         final mime = header.split(';').first;
         out = EncodedImage(mime.isEmpty ? 'image/png' : mime, url.substring(comma + 1));
       } else if (url.startsWith('http://') || url.startsWith('https://')) {
-        final r = await Net.bytesWithType(Uri.parse(url));
+        final r = await Net.bytesWithType(Uri.parse(url), providerId: providerId);
         final mime = r.mime?.split(';').first ?? lookupMimeType(url) ?? 'image/png';
         out = EncodedImage(mime, base64Encode(r.bytes));
       } else {

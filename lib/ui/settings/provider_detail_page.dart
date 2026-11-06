@@ -16,6 +16,7 @@ import '../../core/i18n.dart';
 import '../../core/net.dart';
 import '../../core/util.dart';
 import '../../data/provider_branding.dart';
+import '../../data/proxy_config.dart';
 import '../../state/settings_store.dart';
 import '../widgets/common.dart';
 import '../widgets/motion.dart';
@@ -161,6 +162,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
         'GET',
         Uri.parse(url),
         headers: {'Authorization': 'Bearer ${_p.keys.firstOrNull ?? ''}', 'x-api-key': _p.keys.firstOrNull ?? ''},
+        providerId: _p.id,
       );
       dynamic cur = j;
       for (final seg in _p.balancePath.split('.').where((e) => e.isNotEmpty)) {
@@ -191,9 +193,55 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     }
   }
 
+  Future<void> _selectProxy(List<ProxyConfig> proxies) async {
+    if (proxies.isEmpty) {
+      final openSettings = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(t('还没有代理', 'No proxies configured')),
+          content: Text(t('请先到「设置 → 网络 → HTTP 代理」添加代理。', 'Add a proxy first in Settings → Network → HTTP proxy.')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('取消', 'Cancel'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('去设置', 'Open settings'))),
+          ],
+        ),
+      );
+      if (openSettings == true && mounted) await Navigator.of(context).pushNamed('/settings/network/proxies');
+      return;
+    }
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      builder: (ctx) => ListView(
+        shrinkWrap: true,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.settings_ethernet_rounded),
+            title: Text(t('使用网络默认代理', 'Use network default')),
+            subtitle: Text(t('跟随设置 → 网络', 'Follow Settings → Network')),
+            trailing: _p.proxyId.isEmpty ? const Icon(Icons.check_rounded) : null,
+            onTap: () => Navigator.pop(ctx, ''),
+          ),
+          for (final proxy in proxies)
+            ListTile(
+              leading: const Icon(Icons.vpn_lock_outlined),
+              title: Text(proxy.displayName),
+              subtitle: Text(proxy.displayAddress, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: _p.proxyId == proxy.id ? const Icon(Icons.check_rounded) : null,
+              onTap: () => Navigator.pop(ctx, proxy.id),
+            ),
+        ],
+      ),
+    );
+    if (selected != null && mounted) _save(_p.copyWith(proxyId: selected));
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final settings = context.watch<SettingsStore>().value;
+    final selectedProxy = settings.proxies.where((e) => e.id == _p.proxyId).firstOrNull;
+    final defaultProxy = settings.proxies.where((e) => e.id == settings.defaultProxyId).firstOrNull;
     final isOpenAi = _p.kind == ProviderKind.openai;
     return PopScope(
       // Saving on pop would re-add a provider that was just deleted.
@@ -286,6 +334,26 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
             ),
             SettingsGroup(
               index: 1,
+              title: t('网络', 'Network'),
+              children: [
+                ListTile(
+                  leading: const IconBadge(Icons.vpn_lock_outlined),
+                  title: Text(t('HTTP 代理', 'HTTP proxy')),
+                  subtitle: Text(
+                    selectedProxy?.displayName ??
+                        (defaultProxy == null
+                            ? t('使用网络默认设置（直连）', 'Use network default (direct)')
+                            : t('网络默认：${defaultProxy.displayName}', 'Network default: ${defaultProxy.displayName}')),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _selectProxy(settings.proxies),
+                ),
+              ],
+            ),
+            SettingsGroup(
+              index: 2,
               title: t('协议', 'Protocol'),
               children: [
                 ListTile(

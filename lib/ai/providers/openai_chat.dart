@@ -24,12 +24,19 @@ class OpenAiChatProvider extends AiProvider with OpenAiCommon {
     }, p);
 
     if (!p.stream) {
-      final j = asMap(await Net.json('POST', url, headers: headers, body: body, cancel: cancel));
+      final j = asMap(await Net.json('POST', url, headers: headers, body: body, cancel: cancel, providerId: config.id));
       yield* _parseFull(j);
       return;
     }
 
-    final res = await Net.send('POST', url, headers: headers, body: jsonEncode(body), cancel: cancel);
+    final res = await Net.send(
+      'POST',
+      url,
+      headers: headers,
+      body: jsonEncode(body),
+      cancel: cancel,
+      providerId: config.id,
+    );
     final calls = <int, String>{}; // index -> callId
     final thinkTag = _ThinkTagState();
     await for (final ev in parseSse(res.stream)) {
@@ -196,7 +203,7 @@ class OpenAiChatProvider extends AiProvider with OpenAiCommon {
           if (text.isNotEmpty) parts.add({'type': 'text', 'text': text});
         case ImagePart(:final url):
           if (!model.vision) continue;
-          final enc = await MediaEncoder.encodeImage(url);
+          final enc = await MediaEncoder.encodeImage(url, providerId: config.id);
           if (enc != null) {
             parts.add({
               'type': 'image_url',

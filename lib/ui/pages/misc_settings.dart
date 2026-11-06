@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import '../../ai/provider_config.dart';
 import '../../core/i18n.dart';
 import '../../core/log.dart';
+import '../../core/net.dart';
 import '../../data/defaults.dart';
 import '../../data/models_misc.dart';
+import '../../data/proxy_config.dart';
 import '../../data/settings.dart';
 import '../../state/notifications.dart';
 import '../../state/settings_store.dart';
@@ -532,29 +534,26 @@ class NetworkSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<SettingsStore>();
     final s = store.value;
+    final defaultProxy = s.proxies.where((e) => e.id == s.defaultProxyId).firstOrNull;
     return Scaffold(
       appBar: AppBar(title: Text(t('网络', 'Network'))),
       body: ListView(
         children: [
           SettingsGroup(
-            footer: t(
-              '代理格式 host:port，留空使用系统网络。仅对本应用的 API 请求生效。',
-              'Proxy as host:port; empty uses the system network. Applies to API requests only.',
-            ),
             children: [
               ListTile(
                 leading: const IconBadge(Icons.vpn_lock_outlined),
                 title: Text(t('HTTP 代理', 'HTTP proxy')),
-                subtitle: Text(s.proxy.isEmpty ? t('未设置', 'Not set') : s.proxy),
-                onTap: () async {
-                  final v = await promptText(
-                    context,
-                    t('HTTP 代理', 'HTTP proxy'),
-                    initial: s.proxy,
-                    hint: '127.0.0.1:7890',
-                  );
-                  if (v != null) store.update((x) => x.copyWith(proxy: v.trim()));
-                },
+                subtitle: Text(
+                  defaultProxy?.displayName ??
+                      (s.proxies.isEmpty
+                          ? t('未设置 · 使用系统网络', 'Not set · Use system network')
+                          : t('${s.proxies.length} 个已保存，未设置默认代理', '${s.proxies.length} saved · No default proxy')),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).pushNamed('/settings/network/proxies'),
               ),
               ListTile(
                 leading: const IconBadge(Icons.badge_outlined),
@@ -576,6 +575,267 @@ class NetworkSettingsPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class ProxyManagerPage extends StatelessWidget {
+  const ProxyManagerPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<SettingsStore>();
+    final settings = store.value;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t('HTTP 代理', 'HTTP proxy')),
+        actions: [
+          IconButton(
+            tooltip: t('添加代理', 'Add proxy'),
+            icon: const Icon(Icons.add_rounded),
+            onPressed: () async {
+              final proxy = await _showProxyEditor(context);
+              if (proxy != null) store.upsertProxy(proxy);
+            },
+          ),
+        ],
+      ),
+      body: ListView(
+        children: [
+          SettingsGroup(
+            title: t('已保存的代理', 'Saved proxies'),
+            footer: t(
+              '支持 host:port、http:// 和 socks5:// 地址。代理地址与认证信息保存在系统安全存储中。点击代理可设为默认，供应商也可单独选择。',
+              'Accepts host:port, http:// and socks5:// addresses. URLs and credentials are stored securely. Tap a proxy to make it the default; providers can also choose one individually.',
+            ),
+            children: [
+              if (settings.proxies.isEmpty)
+                ListTile(
+                  leading: Icon(Icons.info_outline_rounded, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  title: Text(t('还没有代理', 'No proxies yet')),
+                  subtitle: Text(t('点击右上角 + 添加一个代理', 'Tap + to add a proxy')),
+                ),
+              for (final proxy in settings.proxies)
+                _ProxyListTile(
+                  proxy: proxy,
+                  isDefault: settings.defaultProxyId == proxy.id,
+                  onToggleDefault: () =>
+                      store.update((x) => x.copyWith(defaultProxyId: x.defaultProxyId == proxy.id ? '' : proxy.id)),
+                  onEdit: () async {
+                    final updated = await _showProxyEditor(context, existing: proxy);
+                    if (updated != null) store.upsertProxy(updated);
+                  },
+                  onDelete: () async {
+                    if (await confirm(
+                      context,
+                      t('删除「${proxy.displayName}」？', 'Delete "${proxy.displayName}"?'),
+                      destructive: true,
+                    )) {
+                      store.removeProxy(proxy.id);
+                    }
+                  },
+                  onProbe: (latency) => _probeProxy(context, proxy, latency: latency),
+                ),
+            ],
+          ),
+        ],
+      ),
+      floatingActionButton: settings.proxies.isEmpty
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final proxy = await _showProxyEditor(context);
+                if (proxy != null) store.upsertProxy(proxy);
+              },
+              icon: const Icon(Icons.add_rounded),
+              label: Text(t('添加代理', 'Add proxy')),
+            )
+          : null,
+    );
+  }
+}
+
+Future<void> _probeProxy(BuildContext context, ProxyConfig proxy, {required bool latency}) async {
+  toast(context, latency ? t('正在测量延迟…', 'Measuring latency…') : t('正在测试代理…', 'Testing proxy…'));
+  try {
+    final elapsed = await Net.probeProxy(proxy.url);
+    if (!context.mounted) return;
+    toast(
+      context,
+      latency
+          ? t('代理可用 · ${elapsed.inMilliseconds} ms', 'Proxy is alive · ${elapsed.inMilliseconds} ms')
+          : t('代理可用', 'Proxy is alive'),
+    );
+  } catch (error) {
+    if (context.mounted) toast(context, t('代理连接失败：$error', 'Proxy check failed: $error'), error: true);
+  }
+}
+
+Future<ProxyConfig?> _showProxyEditor(BuildContext context, {ProxyConfig? existing}) =>
+    showModalBottomSheet<ProxyConfig>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _ProxyEditorSheet(existing: existing),
+    );
+
+class _ProxyListTile extends StatelessWidget {
+  const _ProxyListTile({
+    required this.proxy,
+    required this.isDefault,
+    required this.onToggleDefault,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onProbe,
+  });
+
+  final ProxyConfig proxy;
+  final bool isDefault;
+  final VoidCallback onToggleDefault;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final void Function(bool latency) onProbe;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final protocol = () {
+      try {
+        return ProxyEndpoint.parse(proxy.url).protocol;
+      } catch (_) {
+        return ProxyProtocol.http;
+      }
+    }();
+    return ListTile(
+      leading: IconBadge(isDefault ? Icons.check_circle_outline_rounded : Icons.vpn_lock_outlined),
+      title: Row(
+        children: [
+          Expanded(child: Text(proxy.displayName, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          if (isDefault)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(10)),
+              child: Text(
+                t('默认', 'Default'),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onPrimaryContainer),
+              ),
+            ),
+        ],
+      ),
+      subtitle: Text(
+        '${protocol == ProxyProtocol.socks5 ? 'SOCKS5' : 'HTTP'} · ${proxy.displayAddress}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      onTap: onToggleDefault,
+      trailing: PopupMenuButton<String>(
+        tooltip: t('管理代理', 'Manage proxy'),
+        onSelected: (action) {
+          switch (action) {
+            case 'alive':
+              onProbe(false);
+            case 'latency':
+              onProbe(true);
+            case 'default':
+              onToggleDefault();
+            case 'edit':
+              onEdit();
+            case 'delete':
+              onDelete();
+          }
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem(value: 'alive', child: Text(t('测活', 'Test connection'))),
+          PopupMenuItem(value: 'latency', child: Text(t('测延迟', 'Measure latency'))),
+          PopupMenuItem(
+            value: 'default',
+            child: Text(isDefault ? t('取消默认', 'Clear default') : t('设为默认', 'Set as default')),
+          ),
+          PopupMenuItem(value: 'edit', child: Text(t('编辑', 'Edit'))),
+          PopupMenuItem(value: 'delete', child: Text(t('删除', 'Delete'))),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProxyEditorSheet extends StatefulWidget {
+  const _ProxyEditorSheet({this.existing});
+  final ProxyConfig? existing;
+
+  @override
+  State<_ProxyEditorSheet> createState() => _ProxyEditorSheetState();
+}
+
+class _ProxyEditorSheetState extends State<_ProxyEditorSheet> {
+  late final TextEditingController _name = TextEditingController(text: widget.existing?.name ?? '');
+  late final TextEditingController _url = TextEditingController(text: widget.existing?.url ?? '');
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _url.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+    child: Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.existing == null ? t('添加代理', 'Add proxy') : t('编辑代理', 'Edit proxy'),
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _name,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: t('名称（可选）', 'Name (optional)'),
+              hintText: t('例如：东京节点', 'For example, Tokyo'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _url,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            decoration: InputDecoration(
+              labelText: t('代理地址', 'Proxy URL'),
+              hintText: 'socks5://user:pass@127.0.0.1:1080',
+              helperText: 'http://、socks5://、host:port',
+            ),
+            validator: (value) {
+              try {
+                ProxyEndpoint.parse(value ?? '');
+                return null;
+              } catch (error) {
+                return '$error'.replaceFirst('FormatException: ', '');
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () {
+                if (!_formKey.currentState!.validate()) return;
+                Navigator.pop(
+                  context,
+                  widget.existing?.copyWith(name: _name.text.trim(), url: _url.text.trim()) ??
+                      ProxyConfig(name: _name.text.trim(), url: _url.text.trim()),
+                );
+              },
+              child: Text(t('保存', 'Save')),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class RequestLogsPage extends StatelessWidget {

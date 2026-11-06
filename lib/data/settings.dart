@@ -5,6 +5,7 @@ import 'assistant.dart';
 import 'defaults.dart';
 import 'models_misc.dart';
 import 'network_settings.dart';
+import 'proxy_config.dart';
 
 enum ThemeModePref { system, light, dark }
 
@@ -213,6 +214,8 @@ class AppSettings {
     this.display = const DisplaySettings(),
     this.tts = const TtsSettings(),
     this.webDav = const WebDavConfig(),
+    this.proxies = const [],
+    this.defaultProxyId = '',
     this.userAgent = '',
     this.proxy = '',
     this.autoRetry = true,
@@ -253,6 +256,8 @@ class AppSettings {
   final DisplaySettings display;
   final TtsSettings tts;
   final WebDavConfig webDav;
+  final List<ProxyConfig> proxies;
+  final String defaultProxyId;
   final String userAgent;
   final String proxy;
   final bool autoRetry;
@@ -329,6 +334,8 @@ class AppSettings {
     DisplaySettings? display,
     TtsSettings? tts,
     WebDavConfig? webDav,
+    List<ProxyConfig>? proxies,
+    String? defaultProxyId,
     String? userAgent,
     String? proxy,
     bool? autoRetry,
@@ -368,6 +375,8 @@ class AppSettings {
     display: display ?? this.display,
     tts: tts ?? this.tts,
     webDav: webDav ?? this.webDav,
+    proxies: proxies ?? this.proxies,
+    defaultProxyId: defaultProxyId ?? this.defaultProxyId,
     userAgent: userAgent ?? this.userAgent,
     proxy: proxy ?? this.proxy,
     autoRetry: autoRetry ?? this.autoRetry,
@@ -424,6 +433,8 @@ class AppSettings {
       display: DisplaySettings.fromJson(asMap(j['display'])),
       tts: TtsSettings.fromJson(asMap(j['tts'])),
       webDav: WebDavConfig.fromJson(asMap(j['webDav'])),
+      proxies: mapList(j['proxies'], ProxyConfig.fromJson),
+      defaultProxyId: asStr(j['defaultProxyId']),
       userAgent: asStr(j['userAgent']),
       proxy: asStr(j['proxy']),
       autoRetry: asBool(j['autoRetry'], true),
@@ -469,8 +480,10 @@ class AppSettings {
     'display': display.toJson(),
     'tts': tts.toJson(),
     'webDav': withSecrets ? webDav.toJson() : webDav.copyWith(password: '').toJson(),
+    'proxies': proxies.map((e) => e.toJson(withSecrets: withSecrets)).toList(),
+    'defaultProxyId': defaultProxyId,
     'userAgent': userAgent,
-    'proxy': proxy,
+    'proxy': withSecrets ? proxy : '',
     'autoRetry': autoRetry,
     'network': network.toJson(),
     'translateTarget': translateTarget,

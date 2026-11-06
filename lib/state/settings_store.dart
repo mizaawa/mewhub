@@ -14,6 +14,7 @@ import '../data/assistant.dart';
 import '../data/defaults.dart';
 import '../data/provider_branding.dart';
 import '../data/models_misc.dart';
+import '../data/proxy_config.dart';
 import '../data/settings.dart';
 
 /// Holds [AppSettings] and persists them.
@@ -32,6 +33,7 @@ class SettingsStore extends ChangeNotifier {
   AppSettings _settings;
   AppSettings get value => _settings;
   Timer? _saveTimer;
+  Future<void> _flushQueue = Future<void>.value();
 
   static Future<SettingsStore> load() async {
     final file = File(AppPaths.settingsPath);
@@ -67,26 +69,44 @@ class SettingsStore extends ChangeNotifier {
 
   void _applyRuntime() {
     I18n.apply(_settings.language);
+    final proxyById = {for (final proxy in _settings.proxies) proxy.id: proxy.url};
+    final defaultProxy = proxyById[_settings.defaultProxyId] ?? _settings.proxy;
+    final providerProxies = <String, String>{};
+    for (final provider in _settings.providers) {
+      final url = proxyById[provider.proxyId];
+      if (provider.proxyId.isNotEmpty && url != null && url.isNotEmpty) providerProxies[provider.id] = url;
+    }
     final changed =
         NetConfig.userAgent != _settings.userAgent ||
-        NetConfig.proxy != _settings.proxy ||
+        NetConfig.proxy != defaultProxy ||
         NetConfig.connectTimeout != Duration(seconds: _settings.network.connectTimeoutSeconds) ||
-        NetConfig.responseTimeout != Duration(seconds: _settings.network.responseTimeoutSeconds);
+        NetConfig.responseTimeout != Duration(seconds: _settings.network.responseTimeoutSeconds) ||
+        !_sameMap(NetConfig.providerProxies, providerProxies);
     NetConfig.userAgent = _settings.userAgent;
-    NetConfig.proxy = _settings.proxy;
+    NetConfig.proxy = defaultProxy;
+    NetConfig.providerProxies = providerProxies;
     NetConfig.connectTimeout = Duration(seconds: _settings.network.connectTimeoutSeconds);
     NetConfig.responseTimeout = Duration(seconds: _settings.network.responseTimeoutSeconds);
     if (changed) Net.reconfigure();
   }
+
+  static bool _sameMap(Map<String, String> a, Map<String, String> b) =>
+      a.length == b.length && a.entries.every((entry) => b[entry.key] == entry.value);
 
   void _scheduleSave() {
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 400), flush);
   }
 
-  Future<void> flush() async {
+  Future<void> flush() {
     _saveTimer?.cancel();
     final s = _settings;
+    final write = _flushQueue.then((_) => _writeSnapshot(s));
+    _flushQueue = write.catchError((Object _) {});
+    return write;
+  }
+
+  Future<void> _writeSnapshot(AppSettings s) async {
     final json = s.toJson(withSecrets: false);
     _stripSecrets(json);
     final file = File(AppPaths.settingsPath);
@@ -117,6 +137,10 @@ class SettingsStore extends ChangeNotifier {
     },
     'webdav': s.webDav.password,
     'proxy': s.proxy,
+    'proxies': {
+      for (final proxy in s.proxies)
+        if (proxy.url.isNotEmpty) proxy.id: proxy.url,
+    },
   };
 
   static void _stripSecrets(Map<String, dynamic> json) {
@@ -127,12 +151,26 @@ class SettingsStore extends ChangeNotifier {
       (e as Map)['headers'] = <String, String>{};
     }
     json['proxy'] = '';
+    for (final e in asList(json['proxies'])) {
+      if (e is Map) e['url'] = '';
+    }
   }
 
   static AppSettings _injectSecrets(AppSettings s, Map<String, dynamic> secrets) {
     final pk = asMap(secrets['providers']);
     final sk = asMap(secrets['search']);
     final mk = asMap(secrets['mcp']);
+    final proxySecrets = asMap(secrets['proxies']);
+    final proxies = [
+      for (final proxy in s.proxies)
+        proxy.copyWith(url: proxySecrets[proxy.id] is String ? proxySecrets[proxy.id] as String : proxy.url),
+    ];
+    final legacyProxy = secrets['proxy'] is String ? secrets['proxy'] as String : s.proxy;
+    var defaultProxyId = s.defaultProxyId;
+    if (proxies.isEmpty && legacyProxy.trim().isNotEmpty) {
+      proxies.add(ProxyConfig(id: 'legacy-proxy', url: legacyProxy));
+      defaultProxyId = 'legacy-proxy';
+    }
     return s.copyWith(
       providers: [for (final p in s.providers) pk[p.id] is String ? p.copyWith(apiKey: pk[p.id] as String) : p],
       searchServices: [
@@ -143,7 +181,9 @@ class SettingsStore extends ChangeNotifier {
           mk[m.id] is Map ? m.copyWith(headers: asMap(mk[m.id]).map((k, v) => MapEntry(k, v.toString()))) : m,
       ],
       webDav: secrets['webdav'] is String ? s.webDav.copyWith(password: secrets['webdav'] as String) : null,
-      proxy: secrets['proxy'] is String ? secrets['proxy'] as String : null,
+      proxy: '',
+      proxies: proxies,
+      defaultProxyId: proxies.any((e) => e.id == defaultProxyId) ? defaultProxyId : '',
     );
   }
 
@@ -164,6 +204,25 @@ class SettingsStore extends ChangeNotifier {
     if (id == zakoProviderId) return;
     update((s) => s.copyWith(providers: s.providers.where((e) => e.id != id).toList()));
   }
+
+  void upsertProxy(ProxyConfig proxy) => update((s) {
+    final list = [...s.proxies];
+    final index = list.indexWhere((e) => e.id == proxy.id);
+    if (index >= 0) {
+      list[index] = proxy;
+    } else {
+      list.add(proxy);
+    }
+    return s.copyWith(proxies: list);
+  });
+
+  void removeProxy(String id) => update(
+    (s) => s.copyWith(
+      proxies: s.proxies.where((e) => e.id != id).toList(),
+      defaultProxyId: s.defaultProxyId == id ? '' : s.defaultProxyId,
+      providers: [for (final p in s.providers) p.proxyId == id ? p.copyWith(proxyId: '') : p],
+    ),
+  );
 
   void upsertAssistant(Assistant a) => update((s) {
     final list = [...s.assistants];

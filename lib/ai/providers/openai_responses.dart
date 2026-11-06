@@ -26,7 +26,7 @@ class OpenAiResponsesProvider extends AiProvider with OpenAiCommon {
     }, p);
 
     if (!p.stream) {
-      final j = asMap(await Net.json('POST', url, headers: headers, body: body, cancel: cancel));
+      final j = asMap(await Net.json('POST', url, headers: headers, body: body, cancel: cancel, providerId: config.id));
       for (final item in asList(j['output'])) {
         yield* _emitItem(asMap(item), full: true);
       }
@@ -36,7 +36,14 @@ class OpenAiResponsesProvider extends AiProvider with OpenAiCommon {
       return;
     }
 
-    final res = await Net.send('POST', url, headers: headers, body: jsonEncode(body), cancel: cancel);
+    final res = await Net.send(
+      'POST',
+      url,
+      headers: headers,
+      body: jsonEncode(body),
+      cancel: cancel,
+      providerId: config.id,
+    );
     final callByItem = <String, String>{}; // item_id -> call_id
     final argsSeen = <String>{};
     await for (final ev in parseSse(res.stream)) {
@@ -209,7 +216,7 @@ class OpenAiResponsesProvider extends AiProvider with OpenAiCommon {
               if (text.isNotEmpty) content.add({'type': 'input_text', 'text': text});
             case ImagePart(:final url):
               if (!model.vision) continue;
-              final enc = await MediaEncoder.encodeImage(url);
+              final enc = await MediaEncoder.encodeImage(url, providerId: config.id);
               if (enc != null) content.add({'type': 'input_image', 'image_url': enc.dataUri});
             case DocumentPart():
               content.add({'type': 'input_text', 'text': documentAsText(part)});

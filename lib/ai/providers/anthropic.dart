@@ -29,7 +29,15 @@ class AnthropicProvider extends AiProvider {
       final q = <String, String>{'limit': '1000'};
       if (after != null) q['after_id'] = after;
       final uri = Uri.parse('${config.trimmedBaseUrl}/models').replace(queryParameters: q);
-      final j = asMap(await Net.json('GET', uri, headers: _headers(null), timeout: const Duration(seconds: 30)));
+      final j = asMap(
+        await Net.json(
+          'GET',
+          uri,
+          headers: _headers(null),
+          timeout: const Duration(seconds: 30),
+          providerId: config.id,
+        ),
+      );
       for (final e in asList(j['data'])) {
         final m = asMap(e);
         out.add(RemoteModel(asStr(m['id']), asStrOrNull(m['display_name'])));
@@ -78,11 +86,20 @@ class AnthropicProvider extends AiProvider {
     final url = Uri.parse('${config.trimmedBaseUrl}/messages');
     final body = mergeBody(await _buildBody(messages, p), p);
     if (!p.stream) {
-      final j = asMap(await Net.json('POST', url, headers: _headers(p), body: body, cancel: cancel));
+      final j = asMap(
+        await Net.json('POST', url, headers: _headers(p), body: body, cancel: cancel, providerId: config.id),
+      );
       yield* _parseFull(j);
       return;
     }
-    final res = await Net.send('POST', url, headers: _headers(p), body: jsonEncode(body), cancel: cancel);
+    final res = await Net.send(
+      'POST',
+      url,
+      headers: _headers(p),
+      body: jsonEncode(body),
+      cancel: cancel,
+      providerId: config.id,
+    );
     final blocks = <int, _Block>{};
     var usage = const TokenUsage();
     String? stop;
@@ -257,7 +274,7 @@ class AnthropicProvider extends AiProvider {
               if (text.isNotEmpty) blocks.add({'type': 'text', 'text': text});
             case ImagePart(:final url):
               if (!model.vision) continue;
-              final enc = await MediaEncoder.encodeImage(url);
+              final enc = await MediaEncoder.encodeImage(url, providerId: config.id);
               if (enc != null) {
                 blocks.add({
                   'type': 'image',

@@ -24,7 +24,15 @@ class GoogleProvider extends AiProvider {
       final q = <String, String>{'pageSize': '1000'};
       if (token != null) q['pageToken'] = token;
       final uri = Uri.parse('${config.trimmedBaseUrl}/models').replace(queryParameters: q);
-      final j = asMap(await Net.json('GET', uri, headers: _headers(null), timeout: const Duration(seconds: 30)));
+      final j = asMap(
+        await Net.json(
+          'GET',
+          uri,
+          headers: _headers(null),
+          timeout: const Duration(seconds: 30),
+          providerId: config.id,
+        ),
+      );
       for (final e in asList(j['models'])) {
         final m = asMap(e);
         final methods = asList(m['supportedGenerationMethods']);
@@ -53,6 +61,7 @@ class GoogleProvider extends AiProvider {
             'parameters': {'sampleCount': n},
           },
           timeout: const Duration(minutes: 5),
+          providerId: config.id,
         ),
       );
       final out = <String>[];
@@ -80,11 +89,20 @@ class GoogleProvider extends AiProvider {
     final url = Uri.parse('${config.trimmedBaseUrl}/models/${p.model.modelId}:$method');
     final body = mergeBody(await _buildBody(messages, p), p);
     if (!p.stream) {
-      final j = asMap(await Net.json('POST', url, headers: _headers(p), body: body, cancel: cancel));
+      final j = asMap(
+        await Net.json('POST', url, headers: _headers(p), body: body, cancel: cancel, providerId: config.id),
+      );
       yield* _parseResponse(j, _CallIds());
       return;
     }
-    final res = await Net.send('POST', url, headers: _headers(p), body: jsonEncode(body), cancel: cancel);
+    final res = await Net.send(
+      'POST',
+      url,
+      headers: _headers(p),
+      body: jsonEncode(body),
+      cancel: cancel,
+      providerId: config.id,
+    );
     final ids = _CallIds();
     await for (final ev in parseSse(res.stream)) {
       final j = asMapOrNull(tryJsonDecode(ev.data));
@@ -246,7 +264,7 @@ class GoogleProvider extends AiProvider {
               if (text.isNotEmpty) parts.add({'text': text});
             case ImagePart(:final url):
               if (!model.vision) continue;
-              final enc = await MediaEncoder.encodeImage(url);
+              final enc = await MediaEncoder.encodeImage(url, providerId: config.id);
               if (enc != null) {
                 parts.add({
                   'inlineData': {'mimeType': enc.mime, 'data': enc.base64},
@@ -283,7 +301,7 @@ class GoogleProvider extends AiProvider {
             modelParts.add({'text': part.text, 'thoughtSignature': ?pendingSig});
             pendingSig = null;
           case ImagePart(:final url):
-            final enc = await MediaEncoder.encodeImage(url);
+            final enc = await MediaEncoder.encodeImage(url, providerId: config.id);
             if (enc == null) continue;
             if (responses.isNotEmpty) flushRound();
             final s = part.meta?['thoughtSignature'];

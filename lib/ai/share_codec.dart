@@ -13,7 +13,9 @@ class ProviderShareCodec {
   static const rikkaPrefix = 'ai-provider:v1:';
 
   static String encode(ProviderConfig p, {bool includeKey = true}) {
-    final json = p.toJson(withSecrets: includeKey, withModels: true)..remove('id');
+    final json = p.toJson(withSecrets: includeKey, withModels: true)
+      ..remove('id')
+      ..remove('proxyId');
     return '$prefix${base64Url.encode(utf8.encode(jsonEncode(json)))}';
   }
 

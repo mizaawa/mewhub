@@ -206,6 +206,7 @@ class ProviderConfig {
     this.vertex = false,
     this.balanceUrl = '',
     this.balancePath = '',
+    this.proxyId = '',
     this.builtIn = false,
   }) : id = id ?? newId();
 
@@ -237,6 +238,9 @@ class ProviderConfig {
   /// dot path [balancePath] (e.g. `data.total_balance`).
   final String balanceUrl;
   final String balancePath;
+
+  /// ID of the proxy selected in Network settings, or empty to use the app default.
+  final String proxyId;
 
   final bool builtIn;
 
@@ -273,6 +277,7 @@ class ProviderConfig {
     bool? vertex,
     String? balanceUrl,
     String? balancePath,
+    String? proxyId,
     String? id,
   }) => ProviderConfig(
     id: id ?? this.id,
@@ -291,6 +296,7 @@ class ProviderConfig {
     vertex: vertex ?? this.vertex,
     balanceUrl: balanceUrl ?? this.balanceUrl,
     balancePath: balancePath ?? this.balancePath,
+    proxyId: proxyId ?? this.proxyId,
     builtIn: builtIn,
   );
 
@@ -311,6 +317,7 @@ class ProviderConfig {
     vertex: asBool(j['vertex']),
     balanceUrl: asStr(j['balanceUrl']),
     balancePath: asStr(j['balancePath']),
+    proxyId: asStr(j['proxyId']),
     builtIn: asBool(j['builtIn']),
   );
 
@@ -332,6 +339,7 @@ class ProviderConfig {
     'vertex': vertex,
     'balanceUrl': balanceUrl,
     'balancePath': balancePath,
+    'proxyId': proxyId,
     'builtIn': builtIn,
   };
 }

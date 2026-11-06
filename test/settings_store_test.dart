@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mewhub/core/paths.dart';
 import 'package:mewhub/data/models_misc.dart';
+import 'package:mewhub/data/proxy_config.dart';
 import 'package:mewhub/state/settings_store.dart';
 
 void main() {
@@ -48,7 +49,8 @@ void main() {
     expect(reloaded.value.searchServices.single.apiKey, 'tvly-secret');
     expect(reloaded.value.webDav.password, 'dav-secret');
     expect(reloaded.value.mcpServers.single.headers['Authorization'], 'Bearer mcp-secret');
-    expect(reloaded.value.proxy, 'user:pass@127.0.0.1:7890');
+    expect(reloaded.value.proxies.single.url, 'user:pass@127.0.0.1:7890');
+    expect(reloaded.value.defaultProxyId, reloaded.value.proxies.single.id);
   });
 
   test('a corrupt settings file is preserved and defaults are used', () async {
@@ -57,5 +59,31 @@ void main() {
     expect(store.value.assistants, isNotEmpty);
     final backups = tmp.listSync().where((e) => e.path.contains('.corrupt-'));
     expect(backups, isNotEmpty);
+  });
+
+  test('proxy URLs and credentials are kept out of settings.json', () async {
+    final store = await SettingsStore.load();
+    store.update(
+      (s) => s.copyWith(
+        proxies: [ProxyConfig(id: 'private-proxy', name: 'Private', url: 'socks5://user:pass@proxy.example:1080')],
+        defaultProxyId: 'private-proxy',
+      ),
+    );
+    await store.flush();
+
+    final onDisk = await File(AppPaths.settingsPath).readAsString();
+    expect(onDisk.contains('proxy.example'), isFalse);
+    expect(onDisk.contains('socks5://'), isFalse);
+    expect(onDisk.contains('user:pass'), isFalse);
+
+    final reloaded = await SettingsStore.load();
+    expect(reloaded.value.proxies.single.url, 'socks5://user:pass@proxy.example:1080');
+    expect(reloaded.value.defaultProxyId, 'private-proxy');
+  });
+
+  test('concurrent settings flushes are serialized', () async {
+    final store = await SettingsStore.load();
+    await Future.wait([store.flush(), store.flush(), store.flush()]);
+    expect(await File(AppPaths.settingsPath).exists(), isTrue);
   });
 }

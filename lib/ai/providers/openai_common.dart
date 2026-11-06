@@ -85,6 +85,7 @@ mixin OpenAiCommon on AiProvider {
       Uri.parse('${config.trimmedBaseUrl}/models'),
       headers: mergeHeaders({'Authorization': 'Bearer ${nextKey()}'}, null),
       timeout: const Duration(seconds: 30),
+      providerId: config.id,
     );
     final data = j is Map ? asList(j['data'] ?? j['models']) : asList(j);
     final out = <RemoteModel>[];
@@ -113,6 +114,7 @@ mixin OpenAiCommon on AiProvider {
         headers: mergeHeaders({'Authorization': 'Bearer ${nextKey()}'}, null),
         body: body,
         timeout: const Duration(minutes: 5),
+        providerId: config.id,
       ),
     );
     final out = <String>[];
