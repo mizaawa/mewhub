@@ -25,6 +25,7 @@ Future<void> main() async {
   await AppPaths.init();
   final store = await SettingsStore.load();
   final db = await AppDatabase.open();
+  await db.recordAppLaunch();
   final app = AppState(store: store, db: db);
   await app.init();
 

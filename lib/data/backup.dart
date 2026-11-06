@@ -54,6 +54,7 @@ class BackupService {
       ]),
     );
     addText('usage.json', jsonEncode(await db.rawUsage()));
+    addText('app_launches.json', jsonEncode(await db.rawAppLaunches()));
     if (includeFiles) {
       for (final dir in [AppPaths.files, AppPaths.avatars, AppPaths.backgrounds]) {
         if (!await dir.exists()) continue;
@@ -120,6 +121,9 @@ class BackupService {
         .map(asMap)
         .toList();
     if (usage.isNotEmpty) await db.importUsage(usage);
+    final launches = asList(tryJsonDecode(text('app_launches.json') ?? '[]'))
+        .whereType<Map<dynamic, dynamic>>().map(asMap).toList();
+    if (launches.isNotEmpty) await db.importAppLaunches(launches);
     for (final f in archive.files) {
       if (!f.isFile) continue;
       final name = f.name.replaceAll(r'\', '/');

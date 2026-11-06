@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -26,6 +25,8 @@ import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
 import '../widgets/markdown_view.dart';
 import '../widgets/motion.dart';
+
+export 'usage_stats_page.dart' show StatsPage;
 
 class BackupPage extends StatefulWidget {
   const BackupPage({super.key});
@@ -312,6 +313,7 @@ class _TranslatorPageState extends State<TranslatorPage> {
         s,
         text,
         _target,
+        db: context.read<AppState>().db,
         cancel: _cancel,
         onDelta: (v) => mounted ? setState(() => _out = v) : null,
       );
@@ -665,161 +667,6 @@ class _Highlighted extends StatelessWidget {
       start = i + q.length;
     }
     return Text.rich(TextSpan(children: spans), maxLines: 3, overflow: TextOverflow.ellipsis);
-  }
-}
-
-class StatsPage extends StatelessWidget {
-  const StatsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final db = context.read<AppState>().db;
-    final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: Text(t('用量统计', 'Usage stats'))),
-      body: FutureBuilder(
-        future: Future.wait([db.usageByDay(days: 30), db.usageByModel(), db.conversationCount()]),
-        builder: (context, snap) {
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-          final days = snap.data![0] as List<Map<String, Object?>>;
-          final models = snap.data![1] as List<Map<String, Object?>>;
-          final convs = snap.data![2] as int;
-          final totalIn = models.fold<int>(0, (a, m) => a + asInt(m['input']));
-          final totalOut = models.fold<int>(0, (a, m) => a + asInt(m['output']));
-          final maxY = days.fold<double>(
-            1,
-            (a, d) => (asInt(d['input']) + asInt(d['output'])).toDouble() > a
-                ? (asInt(d['input']) + asInt(d['output'])).toDouble()
-                : a,
-          );
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(0, 8, 0, 40),
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    _StatCard(label: t('对话', 'Chats'), value: '$convs', index: 0),
-                    const SizedBox(width: 10),
-                    _StatCard(label: t('输入', 'Input'), value: formatTokens(totalIn), index: 1),
-                    const SizedBox(width: 10),
-                    _StatCard(label: t('输出', 'Output'), value: formatTokens(totalOut), index: 2),
-                  ],
-                ),
-              ),
-              SettingsGroup(
-                index: 3,
-                title: t('最近 30 天', 'Last 30 days'),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 20, 16, 12),
-                    child: SizedBox(
-                      height: 180,
-                      child: days.isEmpty
-                          ? Center(child: Text(t('暂无数据', 'No data')))
-                          : BarChart(
-                              BarChartData(
-                                maxY: maxY * 1.15,
-                                gridData: const FlGridData(show: false),
-                                borderData: FlBorderData(show: false),
-                                titlesData: FlTitlesData(
-                                  leftTitles: const AxisTitles(),
-                                  rightTitles: const AxisTitles(),
-                                  topTitles: const AxisTitles(),
-                                  bottomTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      getTitlesWidget: (v, meta) {
-                                        final i = v.toInt();
-                                        if (i < 0 || i >= days.length || (days.length > 10 && i % 5 != 0)) {
-                                          return const SizedBox.shrink();
-                                        }
-                                        return Text(
-                                          asStr(days[i]['day']).substring(5),
-                                          style: const TextStyle(fontSize: 9),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                barGroups: [
-                                  for (var i = 0; i < days.length; i++)
-                                    BarChartGroupData(
-                                      x: i,
-                                      barRods: [
-                                        BarChartRodData(
-                                          toY: (asInt(days[i]['input']) + asInt(days[i]['output'])).toDouble(),
-                                          width: days.length > 20 ? 5 : 10,
-                                          borderRadius: BorderRadius.circular(4),
-                                          gradient: LinearGradient(
-                                            colors: [scheme.primary.withValues(alpha: 0.5), scheme.primary],
-                                            begin: Alignment.bottomCenter,
-                                            end: Alignment.topCenter,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-              SettingsGroup(
-                index: 4,
-                title: t('按模型', 'By model'),
-                children: [
-                  if (models.isEmpty) ListTile(title: Text(t('暂无数据', 'No data'))),
-                  for (final m in models)
-                    ListTile(
-                      leading: AvatarView(value: '', fallback: asStr(m['name']), size: 32),
-                      title: Text(asStr(m['name'], asStr(m['model_id']))),
-                      subtitle: Text(
-                        '${asInt(m['requests'])} ${t('次请求', 'requests')}'
-                        ' · ↑${formatTokens(asInt(m['input']))} ↓${formatTokens(asInt(m['output']))}'
-                        '${asInt(m['cached']) > 0 ? ' · ${t('缓存', 'cache')} ${formatTokens(asInt(m['cached']))}' : ''}',
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.label, required this.value, required this.index});
-  final String label;
-  final String value;
-  final int index;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: EntranceFx(
-        index: index,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: Column(
-            children: [
-              Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: scheme.primary)),
-              const SizedBox(height: 4),
-              Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant)),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 

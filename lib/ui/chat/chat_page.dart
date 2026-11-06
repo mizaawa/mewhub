@@ -180,7 +180,7 @@ class _ChatPageState extends State<ChatPage> {
     toast(context, t('翻译中…', 'Translating…'));
     try {
       final target = I18n.isZh ? 'Simplified Chinese' : 'English';
-      final out = await AiHelpers.translate(store.value, m.text, target);
+      final out = await AiHelpers.translate(store.value, m.text, target, db: context.read<AppState>().db);
       await c.setTranslation(index, out);
     } catch (e) {
       if (mounted) toast(context, '$e', error: true);
@@ -202,7 +202,12 @@ class _ChatPageState extends State<ChatPage> {
     final store = context.read<SettingsStore>();
     toast(context, t('正在总结…', 'Summarising…'));
     try {
-      final summary = await AiHelpers.compress(store.value, c.resolvedModel?.model.id, c.conversation.currentMessages);
+      final summary = await AiHelpers.compress(
+        store.value,
+        c.resolvedModel?.model.id,
+        c.conversation.currentMessages,
+        db: context.read<AppState>().db,
+      );
       final msg = ChatMessage(
         role: Role.user,
         parts: [

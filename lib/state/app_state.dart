@@ -141,7 +141,7 @@ class AppState extends ChangeNotifier {
     final userTurns = msgs.where((m) => m.role == Role.user).length;
     if (s.autoTitle && (c.title.isEmpty || userTurns == 2)) {
       try {
-        final title = await AiHelpers.title(s, msgs);
+        final title = await AiHelpers.title(s, msgs, db: db);
         if (title != null && title.isNotEmpty) await _patch(c.id, (x) => x.copyWith(title: title));
       } catch (e) {
         debugPrint('title failed: $e');
@@ -149,7 +149,7 @@ class AppState extends ChangeNotifier {
     }
     if (s.suggestions) {
       try {
-        final sug = await AiHelpers.suggestions(s, msgs);
+        final sug = await AiHelpers.suggestions(s, msgs, db: db);
         await _patch(c.id, (x) => x.copyWith(suggestions: sug));
       } catch (e) {
         debugPrint('suggestions failed: $e');

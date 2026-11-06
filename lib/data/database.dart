@@ -6,6 +6,7 @@ import '../ai/message.dart';
 import '../core/paths.dart';
 import 'conversation.dart';
 import 'models_misc.dart';
+import 'usage_statistics.dart';
 
 class ConversationSummary {
   ConversationSummary({
@@ -45,7 +46,7 @@ class AppDatabase {
   static Future<AppDatabase> open([String? path]) async {
     final db = await openDatabase(
       path ?? AppPaths.dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, v) async {
         await db.execute('''CREATE TABLE conversations(
           id TEXT PRIMARY KEY,
@@ -76,11 +77,36 @@ class AppDatabase {
           day TEXT NOT NULL,
           model_id TEXT NOT NULL,
           model_name TEXT NOT NULL DEFAULT '',
+          source TEXT NOT NULL DEFAULT 'chat',
           requests INTEGER NOT NULL DEFAULT 0,
           input_tokens INTEGER NOT NULL DEFAULT 0,
           output_tokens INTEGER NOT NULL DEFAULT 0,
           cached_tokens INTEGER NOT NULL DEFAULT 0,
-          PRIMARY KEY(day, model_id))''');
+          PRIMARY KEY(day, model_id, source))''');
+        await db.execute('''CREATE TABLE app_launches(
+          day TEXT PRIMARY KEY,
+          launches INTEGER NOT NULL DEFAULT 0)''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE usage_stats RENAME TO usage_stats_v1');
+          await db.execute('''CREATE TABLE usage_stats(
+            day TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            model_name TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'chat',
+            requests INTEGER NOT NULL DEFAULT 0,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cached_tokens INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(day, model_id, source))''');
+          await db.execute('''INSERT INTO usage_stats(day, model_id, model_name, source, requests, input_tokens, output_tokens, cached_tokens)
+            SELECT day, model_id, model_name, 'chat', requests, input_tokens, output_tokens, cached_tokens FROM usage_stats_v1''');
+          await db.execute('DROP TABLE usage_stats_v1');
+          await db.execute('''CREATE TABLE app_launches(
+            day TEXT PRIMARY KEY,
+            launches INTEGER NOT NULL DEFAULT 0)''');
+        }
       },
     );
     return AppDatabase._(db);
@@ -179,6 +205,29 @@ class AppDatabase {
 
   Future<int> conversationCount() async =>
       Sqflite.firstIntValue(await _db.rawQuery('SELECT COUNT(*) FROM conversations')) ?? 0;
+
+  /// Counts every stored message, including alternate branches.
+  Future<int> messageCount() async {
+    final rows = await _db.query('conversations', columns: ['data']);
+    var count = 0;
+    for (final row in rows) {
+      final conversation = Conversation.fromJson(jsonDecode(row['data'] as String) as Map<String, dynamic>);
+      count += conversation.nodes.fold<int>(0, (sum, node) => sum + node.messages.length);
+    }
+    return count;
+  }
+
+  Future<void> recordAppLaunch() async {
+    final day = _day(DateTime.now());
+    await _db.rawInsert(
+      'INSERT INTO app_launches(day, launches) VALUES(?, 1) '
+      'ON CONFLICT(day) DO UPDATE SET launches = launches + 1',
+      [day],
+    );
+  }
+
+  Future<int> appLaunchCount() async =>
+      Sqflite.firstIntValue(await _db.rawQuery('SELECT COALESCE(SUM(launches), 0) FROM app_launches')) ?? 0;
 
   /// Recent conversation titles for the "recent chats" context feature.
   Future<List<ConversationSummary>> recent(String assistantId, {String? excludeId, int limit = 10}) async {
@@ -302,35 +351,78 @@ class AppDatabase {
 
   // ---------------- usage stats ----------------
 
-  Future<void> recordUsage(String modelId, String modelName, int input, int output, int cached) async {
+  Future<void> recordUsage(
+    String modelId,
+    String modelName,
+    int input,
+    int output,
+    int cached, {
+    String source = 'chat',
+  }) async {
     final now = DateTime.now();
-    final day = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final day = _day(now);
     await _db.rawInsert(
-      'INSERT INTO usage_stats(day, model_id, model_name, requests, input_tokens, output_tokens, cached_tokens) '
-      'VALUES(?, ?, ?, 1, ?, ?, ?) ON CONFLICT(day, model_id) DO UPDATE SET '
+      'INSERT INTO usage_stats(day, model_id, model_name, source, requests, input_tokens, output_tokens, cached_tokens) '
+      'VALUES(?, ?, ?, ?, 1, ?, ?, ?) ON CONFLICT(day, model_id, source) DO UPDATE SET '
       'requests = requests + 1, input_tokens = input_tokens + excluded.input_tokens, '
       'output_tokens = output_tokens + excluded.output_tokens, cached_tokens = cached_tokens + excluded.cached_tokens, '
       'model_name = excluded.model_name',
-      [day, modelId, modelName, input, output, cached],
+      [day, modelId, modelName, source, input, output, cached],
     );
   }
 
-  Future<List<Map<String, Object?>>> usageByDay({int days = 30}) {
-    final from = DateTime.now().subtract(Duration(days: days));
-    final d = '${from.year}-${from.month.toString().padLeft(2, '0')}-${from.day.toString().padLeft(2, '0')}';
+  Future<List<Map<String, Object?>>> usageByDay({int? days = 30}) {
+    final from = days == null ? null : _day(DateTime.now().subtract(Duration(days: days - 1)));
     return _db.rawQuery(
-      'SELECT day, SUM(requests) AS requests, SUM(input_tokens) AS input, SUM(output_tokens) AS output '
-      'FROM usage_stats WHERE day >= ? GROUP BY day ORDER BY day',
-      [d],
+      'SELECT day, SUM(requests) AS requests, SUM(input_tokens) AS input, SUM(output_tokens) AS output, '
+      'SUM(cached_tokens) AS cached FROM usage_stats ${from == null ? '' : 'WHERE day >= ?'} GROUP BY day ORDER BY day',
+      from == null ? null : [from],
     );
   }
 
-  Future<List<Map<String, Object?>>> usageByModel() => _db.rawQuery(
-    'SELECT model_id, MAX(model_name) AS name, SUM(requests) AS requests, SUM(input_tokens) AS input, '
-    'SUM(output_tokens) AS output, SUM(cached_tokens) AS cached FROM usage_stats GROUP BY model_id ORDER BY input + output DESC',
-  );
+  Future<List<Map<String, Object?>>> usageByModel({int? days}) {
+    final from = days == null ? null : _day(DateTime.now().subtract(Duration(days: days - 1)));
+    return _db.rawQuery(
+      'SELECT model_id, MAX(model_name) AS name, SUM(requests) AS requests, SUM(input_tokens) AS input, '
+      'SUM(output_tokens) AS output, SUM(cached_tokens) AS cached FROM usage_stats '
+      '${from == null ? '' : 'WHERE day >= ?'} GROUP BY model_id ORDER BY input + output DESC',
+      from == null ? null : [from],
+    );
+  }
+
+  Future<List<Map<String, Object?>>> usageBySource({int? days}) {
+    final from = days == null ? null : _day(DateTime.now().subtract(Duration(days: days - 1)));
+    return _db.rawQuery(
+      'SELECT source, SUM(requests) AS requests, SUM(input_tokens) AS input, SUM(output_tokens) AS output, '
+      'SUM(cached_tokens) AS cached FROM usage_stats ${from == null ? '' : 'WHERE day >= ?'} '
+      'GROUP BY source ORDER BY input + output DESC',
+      from == null ? null : [from],
+    );
+  }
 
   Future<List<Map<String, Object?>>> rawUsage() => _db.query('usage_stats');
+
+  Future<UsageStatistics> usageStatistics() async {
+    // One read transaction keeps totals, rankings and the heatmap consistent
+    // even when a background title/suggestion completes while opening the page.
+    return _db.transaction((txn) async => UsageStatistics.fromStorage(
+      now: DateTime.now(),
+      usageRows: await txn.query('usage_stats'),
+      conversations: (await txn.query('conversations', columns: ['data'])).map((row) =>
+        Conversation.fromJson(jsonDecode(row['data'] as String) as Map<String, dynamic>)).toList(),
+      launchRows: await txn.query('app_launches'),
+    ));
+  }
+
+  Future<List<Map<String, Object?>>> rawAppLaunches() => _db.query('app_launches');
+
+  Future<void> importAppLaunches(List<Map<String, dynamic>> rows) async {
+    final batch = _db.batch();
+    for (final row in rows) {
+      batch.insert('app_launches', row, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
 
   Future<void> importUsage(List<Map<String, dynamic>> rows) async {
     final batch = _db.batch();
@@ -341,8 +433,11 @@ class AppDatabase {
   }
 
   Future<void> wipe() async {
-    for (final t in ['conversations', 'memories', 'favorites', 'usage_stats']) {
+    for (final t in ['conversations', 'memories', 'favorites', 'usage_stats', 'app_launches']) {
       await _db.delete(t);
     }
   }
+
+  static String _day(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }
