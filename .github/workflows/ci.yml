@@ -45,7 +45,7 @@ jobs:
         run: flutter test --reporter expanded
 
   android:
-    name: Build Android (debug-signed)
+    name: Build Android APK
     needs: analyze-test
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -72,10 +72,42 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Build APK
-        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }}
+      - name: Restore signing key
+        if: github.event_name != 'pull_request'
+        id: sign
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing Android signing secret: $name"
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          test -s "$RUNNER_TEMP/release.jks"
+          echo "path=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed APK
+        if: github.event_name != 'pull_request'
+        env:
+          MEWHUB_KEYSTORE_PATH: ${{ steps.sign.outputs.path }}
+          MEWHUB_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MEWHUB_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MEWHUB_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} --android-project-arg=force-version-code-ignoring-abi=true
+
+      - name: Check PR APK build
+        if: github.event_name == 'pull_request'
+        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} --android-project-arg=force-version-code-ignoring-abi=true
 
       - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
         with:
           name: android-apk-${{ github.sha }}
           path: build/app/outputs/flutter-apk/*.apk

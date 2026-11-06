@@ -5,14 +5,15 @@ import 'package:mewhub/data/settings.dart';
 import 'package:mewhub/ui/chat/profile_header.dart';
 
 void main() {
-  test('new settings use the supplied image for the default assistant', () {
+  test('new settings use the first preset avatar for the default assistant', () {
     expect(defaultAssistants().first.avatar, defaultAssistantAvatar);
+    expect(defaultAssistantAvatar, '🐱');
     expect(defaultAssistants().first.name, 'MewBot');
     expect(AppSettings.initial().display.userName, 'Mew');
   });
 
-  test('saved default cat avatar migrates while the assistant id stays stable', () {
-    final oldAssistant = {...defaultAssistants().first.toJson(), 'avatar': '🐱'};
+  test('saved default icon avatar migrates while the assistant id stays stable', () {
+    final oldAssistant = {...defaultAssistants().first.toJson(), 'avatar': 'asset:assets/images/icon.png'};
     final settings = AppSettings.fromJson({
       'assistants': [oldAssistant],
     });
@@ -25,7 +26,7 @@ void main() {
     final otherSettings = AppSettings.fromJson({
       'assistants': [otherAssistant],
     });
-    expect(otherSettings.currentAssistant.avatar, '🐱');
+    expect(otherSettings.currentAssistant.avatar, 'asset:assets/images/icon.png');
   });
 
   testWidgets('sidebar profile shows the saved name and opens its editor', (tester) async {

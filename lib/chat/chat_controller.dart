@@ -22,6 +22,8 @@ import '../tools/local_tools.dart';
 import '../tools/mcp.dart';
 import '../tools/tool.dart';
 import 'accumulator.dart';
+import 'auto_compression.dart';
+import 'helpers.dart';
 import 'prompt_builder.dart';
 
 /// Called by the UI to resolve a pending tool approval.
@@ -262,6 +264,13 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    final autoCompression = settings.autoCompress && targetNodeId == null
+        ? AutoCompressionPlan.forConversation(
+            _conv,
+            model.contextLength,
+            thresholdPercent: settings.autoCompressThreshold,
+          )
+        : null;
     _generating = true;
     lastError = null;
     _cancel = CancelToken();
@@ -285,7 +294,15 @@ class ChatController extends ChangeNotifier {
     final acc = PartAccumulator();
     var totalUsage = const TokenUsage();
     try {
+      if (autoCompression != null && !cancel.isCancelled) {
+        try {
+          await _autoCompress(autoCompression, model.id, cancel);
+        } catch (e) {
+          debugPrint('Automatic context compression failed: $e');
+        }
+      }
       for (var round = 0; round < 32; round++) {
+        if (cancel.isCancelled) break;
         final history = [..._conv.currentMessages]..removeLast();
         final prompt = PromptBuilder.build(
           settings: settings,
@@ -353,6 +370,20 @@ class ChatController extends ChangeNotifier {
       await _persist(force: true);
       if (lastError == null) onGenerationDone?.call(_conv, msg);
     }
+  }
+
+  Future<void> _autoCompress(AutoCompressionPlan plan, String modelId, CancelToken cancel) async {
+    final nodes = _conv.nodes;
+    final endNodeId = nodes[plan.endIndex].id;
+    final history = [for (final node in nodes.sublist(plan.startIndex, plan.endIndex + 1)) node.current];
+    final summary = await AiHelpers.compress(settings, modelId, history, cancel: cancel, db: db);
+    if (cancel.isCancelled || summary.trim().isEmpty) return;
+
+    final updated = insertCompressionCheckpoint(_conv, endNodeId, summary);
+    if (identical(updated, _conv)) return;
+    _conv = updated;
+    if (!_disposed) notifyListeners();
+    await _persist(force: true);
   }
 
   Future<void> _streamWithRetry(

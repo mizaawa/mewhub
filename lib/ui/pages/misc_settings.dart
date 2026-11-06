@@ -97,6 +97,13 @@ class DefaultModelsPage extends StatelessWidget {
                 (v) => s.copyWith(ocrModelId: v),
               ),
               row(
+                Icons.compress_rounded,
+                t('上下文压缩模型', 'Context compression'),
+                t('跟随当前对话模型', 'Same as current chat model'),
+                s.compressModelId,
+                (v) => s.copyWith(compressModelId: v),
+              ),
+              row(
                 Icons.brush_outlined,
                 t('绘图模型', 'Image generation'),
                 t('未设置', 'Not set'),
@@ -110,6 +117,36 @@ class DefaultModelsPage extends StatelessWidget {
             index: 1,
             title: t('自动化', 'Automation'),
             children: [
+              SwitchListTile(
+                secondary: const IconBadge(Icons.compress_rounded),
+                title: Text(t('自动压缩上下文', 'Auto-compress context')),
+                subtitle: Text(t('达到设定比例后总结旧消息', 'Summarize old messages at the chosen threshold')),
+                value: s.autoCompress,
+                onChanged: (v) => store.update((x) => x.copyWith(autoCompress: v)),
+              ),
+              ListTile(
+                leading: const IconBadge(Icons.tune_rounded),
+                title: Text(t('自动压缩触发比例', 'Auto-compression threshold')),
+                subtitle: Text('${s.autoCompressThreshold}%'),
+                enabled: s.autoCompress,
+                onTap: () async {
+                  final value = await promptText(
+                    context,
+                    t('输入模型上下文使用比例（1–100）', 'Model context usage percentage (1–100)'),
+                    initial: '${s.autoCompressThreshold}',
+                    maxLines: 1,
+                  );
+                  if (value == null) return;
+                  final percentage = int.tryParse(value.trim());
+                  if (percentage == null || percentage < 1 || percentage > 100) {
+                    if (context.mounted) {
+                      toast(context, t('请输入 1–100 的整数', 'Enter an integer from 1 to 100'), error: true);
+                    }
+                    return;
+                  }
+                  store.update((x) => x.copyWith(autoCompressThreshold: percentage));
+                },
+              ),
               SwitchListTile(
                 secondary: const IconBadge(Icons.auto_fix_high_rounded),
                 title: Text(t('自动生成标题', 'Auto title')),

@@ -4,7 +4,7 @@ import 'assistant.dart';
 import 'provider_branding.dart';
 
 const defaultAssistantId = '00000000-0000-4000-8000-00000000c47a';
-const defaultAssistantAvatar = 'asset:assets/images/icon.png';
+const defaultAssistantAvatar = '🐱';
 
 const defaultTitlePrompt = '''I will give you some dialogue content in the `<content>` block.
 Summarize the conversation between user and assistant into a short title.
@@ -114,8 +114,8 @@ List<ProviderConfig> defaultProviders() => [
     builtIn: true,
     enabled: false,
     models: [
-      _m('gpt-5.1', name: 'GPT-5.1', reasoning: true, ctx: 400000),
-      _m('gpt-5-mini', name: 'GPT-5 mini', reasoning: true, ctx: 400000),
+      _m('gpt-5.1', name: 'GPT-5.1', reasoning: true, ctx: 272000),
+      _m('gpt-5-mini', name: 'GPT-5 mini', reasoning: true, ctx: 272000),
       _m('gpt-4.1', name: 'GPT-4.1', ctx: 1000000),
     ],
   ),

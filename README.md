@@ -60,16 +60,18 @@ flutter run
 2. 打标签并推送：`git tag v1.2.3 && git push origin v1.2.3`
 3. `Release` 工作流会构建 APK / AAB / IPA 并发布到 GitHub Release
 
-要让 Android 安装包可以覆盖升级，请在仓库 Secrets 中配置固定签名：
+首次发布前，在仓库 Settings → Secrets and variables → Actions 中配置以下四个 Secrets。CI 主分支 APK 和 Release APK/AAB 都使用同一份 JKS；缺少任意一项时构建会失败，避免发布无法覆盖升级的临时签名包。
 
 | Secret | 说明 |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 release.jks` 的输出 |
+| `ANDROID_KEYSTORE_BASE64` | JKS 文件的单行 Base64；PowerShell：`[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path .\release.jks)))` |
 | `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
 | `ANDROID_KEY_ALIAS` | key 别名 |
 | `ANDROID_KEY_PASSWORD` | key 密码 |
 
-未配置时使用 debug 签名，能安装但每次升级需要先卸载。
+请保管并备份原始 JKS 和密码，以后的版本继续使用同一密钥；如果已有正式签名密钥，应沿用原密钥。此前用临时 debug 签名安装的 APK 切换到固定签名时仍需卸载一次，此后同签名且 `versionCode` 不低于已安装版本即可覆盖升级。PR 只检查 debug 签名构建，不上传可安装的 APK。
+
+如果还没有 JKS，可执行一次 `keytool -genkeypair -keystore release.jks -storetype JKS -alias mewhub -keyalg RSA -keysize 4096 -validity 10000` 创建，再将同一文件和密码保存为上面的 Secrets。CI 和 Release 使用各自的构建号；跨两种渠道安装时还需确认新 APK 的 `versionCode` 更高。
 
 ---
 

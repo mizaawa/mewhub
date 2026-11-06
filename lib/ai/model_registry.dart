@@ -86,7 +86,7 @@ class ModelRegistry {
 
   static int _context(String id) {
     if (id.contains('gemini')) return 1048576;
-    if (id.contains('gpt-4.1') || id.contains('gpt-5') || id.contains('gpt-6')) return 400000;
+    if (id.contains('gpt-4.1') || id.contains('gpt-5') || id.contains('gpt-6')) return 272000;
     if (id.contains('claude')) return 200000;
     if (id.contains('deepseek')) return 128000;
     return 128000;

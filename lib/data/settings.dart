@@ -204,11 +204,14 @@ class AppSettings {
     this.suggestionModelId,
     this.ocrModelId,
     this.imageModelId,
+    this.compressModelId,
     this.titlePrompt = defaultTitlePrompt,
     this.suggestionPrompt = defaultSuggestionPrompt,
     this.translatePrompt = defaultTranslatePrompt,
     this.ocrPrompt = defaultOcrPrompt,
     this.compressPrompt = defaultCompressPrompt,
+    this.autoCompress = true,
+    this.autoCompressThreshold = 98,
     this.autoTitle = true,
     this.suggestions = true,
     this.favoriteModelIds = const [],
@@ -247,11 +250,14 @@ class AppSettings {
   final String? suggestionModelId;
   final String? ocrModelId;
   final String? imageModelId;
+  final String? compressModelId;
   final String titlePrompt;
   final String suggestionPrompt;
   final String translatePrompt;
   final String ocrPrompt;
   final String compressPrompt;
+  final bool autoCompress;
+  final int autoCompressThreshold;
   final bool autoTitle;
   final bool suggestions;
   final List<String> favoriteModelIds;
@@ -326,11 +332,14 @@ class AppSettings {
     Object? suggestionModelId = _keep,
     Object? ocrModelId = _keep,
     Object? imageModelId = _keep,
+    Object? compressModelId = _keep,
     String? titlePrompt,
     String? suggestionPrompt,
     String? translatePrompt,
     String? ocrPrompt,
     String? compressPrompt,
+    bool? autoCompress,
+    int? autoCompressThreshold,
     bool? autoTitle,
     bool? suggestions,
     List<String>? favoriteModelIds,
@@ -368,11 +377,14 @@ class AppSettings {
     suggestionModelId: identical(suggestionModelId, _keep) ? this.suggestionModelId : suggestionModelId as String?,
     ocrModelId: identical(ocrModelId, _keep) ? this.ocrModelId : ocrModelId as String?,
     imageModelId: identical(imageModelId, _keep) ? this.imageModelId : imageModelId as String?,
+    compressModelId: identical(compressModelId, _keep) ? this.compressModelId : compressModelId as String?,
     titlePrompt: titlePrompt ?? this.titlePrompt,
     suggestionPrompt: suggestionPrompt ?? this.suggestionPrompt,
     translatePrompt: translatePrompt ?? this.translatePrompt,
     ocrPrompt: ocrPrompt ?? this.ocrPrompt,
     compressPrompt: compressPrompt ?? this.compressPrompt,
+    autoCompress: autoCompress ?? this.autoCompress,
+    autoCompressThreshold: autoCompressThreshold ?? this.autoCompressThreshold,
     autoTitle: autoTitle ?? this.autoTitle,
     suggestions: suggestions ?? this.suggestions,
     favoriteModelIds: favoriteModelIds ?? this.favoriteModelIds,
@@ -407,7 +419,7 @@ class AppSettings {
         if (assistant.id == defaultAssistantId)
           assistant.copyWith(
             name: assistant.name == 'Mew' ? 'MewBot' : assistant.name,
-            avatar: assistant.avatar == '🐱' ? defaultAssistantAvatar : assistant.avatar,
+            avatar: assistant.avatar == 'asset:assets/images/icon.png' ? defaultAssistantAvatar : assistant.avatar,
           )
         else
           assistant,
@@ -428,11 +440,14 @@ class AppSettings {
       suggestionModelId: asStrOrNull(j['suggestionModelId']),
       ocrModelId: asStrOrNull(j['ocrModelId']),
       imageModelId: asStrOrNull(j['imageModelId']),
+      compressModelId: asStrOrNull(j['compressModelId']),
       titlePrompt: asStr(j['titlePrompt'], defaultTitlePrompt),
       suggestionPrompt: asStr(j['suggestionPrompt'], defaultSuggestionPrompt),
       translatePrompt: asStr(j['translatePrompt'], defaultTranslatePrompt),
       ocrPrompt: asStr(j['ocrPrompt'], defaultOcrPrompt),
       compressPrompt: asStr(j['compressPrompt'], defaultCompressPrompt),
+      autoCompress: asBool(j['autoCompress'], true),
+      autoCompressThreshold: asInt(j['autoCompressThreshold'], 98).clamp(1, 100),
       autoTitle: asBool(j['autoTitle'], true),
       suggestions: asBool(j['suggestions'], true),
       favoriteModelIds: asList(j['favoriteModelIds']).map((e) => e.toString()).toList(),
@@ -478,11 +493,14 @@ class AppSettings {
     'suggestionModelId': suggestionModelId,
     'ocrModelId': ocrModelId,
     'imageModelId': imageModelId,
+    'compressModelId': compressModelId,
     'titlePrompt': titlePrompt,
     'suggestionPrompt': suggestionPrompt,
     'translatePrompt': translatePrompt,
     'ocrPrompt': ocrPrompt,
     'compressPrompt': compressPrompt,
+    'autoCompress': autoCompress,
+    'autoCompressThreshold': autoCompressThreshold,
     'autoTitle': autoTitle,
     'suggestions': suggestions,
     'favoriteModelIds': favoriteModelIds,

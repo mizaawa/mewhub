@@ -110,6 +110,7 @@ class AiHelpers {
     String? modelId,
     List<ChatMessage> history, {
     String extra = '',
+    CancelToken? cancel,
     AppDatabase? db,
   }) {
     var prompt = s.compressPrompt.replaceAll('{locale}', PromptBuilder.localeLabel);
@@ -117,6 +118,13 @@ class AiHelpers {
     final convo = history.where((m) => m.role == Role.user || m.role == Role.assistant).map((m) {
       return ChatMessage(role: m.role, parts: [TextPart(m.text)]);
     }).toList();
-    return complete(s, modelId, [...convo, ChatMessage.text(Role.user, prompt)], db: db, source: 'compression');
+    return complete(
+      s,
+      s.compressModelId ?? modelId,
+      [...convo, ChatMessage.text(Role.user, prompt)],
+      cancel: cancel,
+      db: db,
+      source: 'compression',
+    );
   }
 }
