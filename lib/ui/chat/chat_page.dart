@@ -247,7 +247,29 @@ class _ChatPageState extends State<ChatPage> {
               ),
             Column(
               children: [
-                Expanded(child: _messages(context, c, conv)),
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _messages(context, c, conv),
+                      Positioned(
+                        right: 16,
+                        bottom: 16,
+                        child: AnimatedScale(
+                          scale: _showJump ? 1 : 0,
+                          duration: const Duration(milliseconds: 260),
+                          curve: Curves.easeOutBack,
+                          child: FloatingActionButton.small(
+                            heroTag: 'jump',
+                            elevation: 2,
+                            onPressed: () => _scrollToBottom(),
+                            child: const Icon(Icons.keyboard_double_arrow_down_rounded),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 _Suggestions(items: c.generating ? const [] : conv.suggestions, onTap: (v) => c.send([TextPart(v)])),
                 Composer(
                   key: _composer,
@@ -292,21 +314,6 @@ class _ChatPageState extends State<ChatPage> {
                   onCompress: () => _compress(c),
                 ),
               ],
-            ),
-            Positioned(
-              right: 16,
-              bottom: 150,
-              child: AnimatedScale(
-                scale: _showJump ? 1 : 0,
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutBack,
-                child: FloatingActionButton.small(
-                  heroTag: 'jump',
-                  elevation: 2,
-                  onPressed: () => _scrollToBottom(),
-                  child: const Icon(Icons.keyboard_double_arrow_down_rounded),
-                ),
-              ),
             ),
           ],
         );
