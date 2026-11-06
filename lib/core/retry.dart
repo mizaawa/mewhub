@@ -17,7 +17,10 @@ bool isRetryableNetworkError(Object error, NetworkSettings settings) {
     }
     return error.cause != null && isRetryableNetworkError(error.cause!, settings);
   }
-  return error is SocketException || error is HttpException || error is TimeoutException || error is http.ClientException;
+  return error is SocketException ||
+      error is HttpException ||
+      error is TimeoutException ||
+      error is http.ClientException;
 }
 
 /// Null means the server asks us to wait beyond the user's limit. Surface the

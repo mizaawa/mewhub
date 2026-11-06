@@ -122,7 +122,9 @@ class BackupService {
         .toList();
     if (usage.isNotEmpty) await db.importUsage(usage);
     final launches = asList(tryJsonDecode(text('app_launches.json') ?? '[]'))
-        .whereType<Map<dynamic, dynamic>>().map(asMap).toList();
+        .whereType<Map<dynamic, dynamic>>()
+        .map(asMap)
+        .toList();
     if (launches.isNotEmpty) await db.importAppLaunches(launches);
     for (final f in archive.files) {
       if (!f.isFile) continue;

@@ -100,8 +100,10 @@ class AppDatabase {
             output_tokens INTEGER NOT NULL DEFAULT 0,
             cached_tokens INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(day, model_id, source))''');
-          await db.execute('''INSERT INTO usage_stats(day, model_id, model_name, source, requests, input_tokens, output_tokens, cached_tokens)
-            SELECT day, model_id, model_name, 'chat', requests, input_tokens, output_tokens, cached_tokens FROM usage_stats_v1''');
+          await db.execute(
+            '''INSERT INTO usage_stats(day, model_id, model_name, source, requests, input_tokens, output_tokens, cached_tokens)
+            SELECT day, model_id, model_name, 'chat', requests, input_tokens, output_tokens, cached_tokens FROM usage_stats_v1''',
+          );
           await db.execute('DROP TABLE usage_stats_v1');
           await db.execute('''CREATE TABLE app_launches(
             day TEXT PRIMARY KEY,
@@ -405,13 +407,17 @@ class AppDatabase {
   Future<UsageStatistics> usageStatistics() async {
     // One read transaction keeps totals, rankings and the heatmap consistent
     // even when a background title/suggestion completes while opening the page.
-    return _db.transaction((txn) async => UsageStatistics.fromStorage(
-      now: DateTime.now(),
-      usageRows: await txn.query('usage_stats'),
-      conversations: (await txn.query('conversations', columns: ['data'])).map((row) =>
-        Conversation.fromJson(jsonDecode(row['data'] as String) as Map<String, dynamic>)).toList(),
-      launchRows: await txn.query('app_launches'),
-    ));
+    return _db.transaction(
+      (txn) async => UsageStatistics.fromStorage(
+        now: DateTime.now(),
+        usageRows: await txn.query('usage_stats'),
+        conversations: (await txn.query(
+          'conversations',
+          columns: ['data'],
+        )).map((row) => Conversation.fromJson(jsonDecode(row['data'] as String) as Map<String, dynamic>)).toList(),
+        launchRows: await txn.query('app_launches'),
+      ),
+    );
   }
 
   Future<List<Map<String, Object?>>> rawAppLaunches() => _db.query('app_launches');

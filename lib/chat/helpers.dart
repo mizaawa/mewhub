@@ -98,7 +98,9 @@ class AiHelpers {
   static Future<String> ocr(AppSettings s, String imageUrl, {AppDatabase? db}) => complete(
     s,
     s.ocrModelId,
-    [ChatMessage(role: Role.user, parts: [ImagePart(imageUrl), TextPart(s.ocrPrompt)])],
+    [
+      ChatMessage(role: Role.user, parts: [ImagePart(imageUrl), TextPart(s.ocrPrompt)]),
+    ],
     db: db,
     source: 'ocr',
   );
