@@ -28,6 +28,11 @@ import 'composer.dart';
 import 'message_bubble.dart';
 import 'model_picker.dart';
 
+/// The follow motion keeps the same retargeted curve while reaching the new
+/// bottom in half the time of v1.3.0.
+const chatFollowTimeConstantMs = 42.5;
+const chatNavigationVisibleDuration = Duration(milliseconds: 1500);
+
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
 
@@ -43,10 +48,11 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
   final _messageKeys = <String, GlobalKey>{};
   late final Ticker _motion;
   Duration? _lastFrame;
-  Timer? _collapseNavigation;
+  Timer? _navigationTimer;
   bool _stickToBottom = true;
   bool _showJump = false;
-  bool _navigationExpanded = false;
+  bool _readingHistory = false;
+  bool _recentScroll = false;
   bool _userScrolling = false;
   bool _moving = false;
   bool _followScheduled = false;
@@ -66,7 +72,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
   @override
   void dispose() {
     _bound?.removeListener(_onChat);
-    _collapseNavigation?.cancel();
+    _navigationTimer?.cancel();
     _motion.dispose();
     _list.dispose();
     _scroll.dispose();
@@ -82,22 +88,34 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
 
   void _updateNavigation() {
     if (!mounted) return;
-    final show = !_stickToBottom && !_atBottom;
-    if (_showJump != show) setState(() => _showJump = show);
+    final reading = !_stickToBottom && !_atBottom;
+    final show = reading && _recentScroll && !_userScrolling && !_motion.isActive;
+    if (_showJump != show || _readingHistory != reading) {
+      setState(() {
+        _showJump = show;
+        _readingHistory = reading;
+      });
+    }
   }
 
-  void _expandNavigation() {
-    _collapseNavigation?.cancel();
-    if (!_navigationExpanded) setState(() => _navigationExpanded = true);
-    _collapseLater();
-  }
-
-  void _collapseLater() {
-    _collapseNavigation?.cancel();
-    _collapseNavigation = Timer(const Duration(seconds: 2), () {
-      if (!mounted || _userScrolling) return;
-      setState(() => _navigationExpanded = false);
+  void _recordScrollActivity({required bool started}) {
+    // Match RikkaHub's isRecentScroll effect: arm on scroll start, restart the
+    // 1.5 s expiry on stop, and only reveal while the list is stationary.
+    // A stream update or viewport resize must never re-arm the controls.
+    _navigationTimer?.cancel();
+    if (started) _recentScroll = true;
+    _navigationTimer = Timer(chatNavigationVisibleDuration, () {
+      if (!mounted) return;
+      _recentScroll = false;
+      _updateNavigation();
     });
+    _updateNavigation();
+  }
+
+  void _hideNavigation() {
+    _navigationTimer?.cancel();
+    _recentScroll = false;
+    if (_showJump && mounted) setState(() => _showJump = false);
   }
 
   void _stopMotion() {
@@ -111,17 +129,21 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     if (notification.depth != 0 || notification.metrics.axis != Axis.vertical || _moving) return false;
     if ((notification is ScrollStartNotification && notification.dragDetails != null) ||
         (notification is UserScrollNotification && notification.direction != ScrollDirection.idle)) {
-      _stopMotion();
-      _userScrolling = true;
-      _stickToBottom = false;
-      _expandNavigation();
-    } else if (notification is ScrollUpdateNotification && _userScrolling) {
-      _expandNavigation();
+      if (!_userScrolling) {
+        _stopMotion();
+        _userScrolling = true;
+        _stickToBottom = false;
+        _recordScrollActivity(started: true);
+      }
     } else if (notification is ScrollEndNotification && _userScrolling) {
       _userScrolling = false;
       _stickToBottom = _atBottom;
-      _collapseLater();
-      if (_stickToBottom) _scheduleFollow();
+      if (_stickToBottom) {
+        _hideNavigation();
+        _scheduleFollow();
+      } else {
+        _recordScrollActivity(started: false);
+      }
     }
     _updateNavigation();
     return false;
@@ -144,6 +166,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
       _lastFrame = null;
       _motion.start();
     }
+    _updateNavigation();
   }
 
   double _targetOffset() {
@@ -181,11 +204,17 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     // Retarget the same motion every frame. New tokens never restart an
     // animation, and a drag cancels following before moving a single pixel.
     final finished = delta.abs() < 0.5 || MediaQuery.disableAnimationsOf(context);
-    final next = finished ? target : _scroll.offset + delta * (1 - math.exp(-dt.clamp(1, 64) / 85));
+    final next = finished
+        ? target
+        : _scroll.offset + delta * (1 - math.exp(-dt.clamp(1, 64) / chatFollowTimeConstantMs));
     _moving = true;
     if (next != _scroll.offset) _scroll.jumpTo(next);
     _moving = false;
-    if (finished) _stopMotion();
+    if (finished) {
+      final jumpedToMessage = _seekIndex != null;
+      _stopMotion();
+      if (jumpedToMessage) _recordScrollActivity(started: false);
+    }
     _updateNavigation();
   }
 
@@ -212,7 +241,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     _stickToBottom = false;
     _userScrolling = false;
     _seekIndex = index;
-    _expandNavigation();
+    _recordScrollActivity(started: true);
     _startMotion();
   }
 
@@ -223,9 +252,10 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     _messageKeys.clear();
     c.addListener(_onChat);
     _stopMotion();
-    _collapseNavigation?.cancel();
+    _navigationTimer?.cancel();
     _showJump = false;
-    _navigationExpanded = false;
+    _readingHistory = false;
+    _recentScroll = false;
     _userScrolling = false;
     _stickToBottom = true;
     _scrollToBottom(animate: false);
@@ -245,6 +275,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     _stopMotion();
     _stickToBottom = true;
     _userScrolling = false;
+    _hideNavigation();
     final bound = _bound;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !identical(bound, _bound) || !_scroll.hasClients || !_list.isAttached || !_stickToBottom) return;
@@ -429,7 +460,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
                         ).createShader(Rect.fromLTWH(0, 0, bounds.width, math.min(_readingInset, bounds.height))),
                         child: _messages(context, c, conv),
                       ),
-                      if (_showJump && c.generating)
+                      if (_readingHistory && c.generating)
                         Positioned(
                           bottom: 16,
                           left: 0,
@@ -441,33 +472,30 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
                             ),
                           ),
                         ),
-                      if (_showJump)
-                        Positioned(
-                          right: 16,
-                          bottom: 16,
-                          child: ListenableBuilder(
-                            listenable: _scroll,
-                            builder: (context, _) => ChatNavigation(
-                              key: const ValueKey('chat-navigation'),
-                              expanded: _navigationExpanded,
-                              onExpand: _expandNavigation,
-                              onTop: () => _jumpToMessage(0),
-                              onPrevious: _adjacentUser(next: false) == null
-                                  ? null
-                                  : () {
-                                      final index = _adjacentUser(next: false);
-                                      if (index != null) _jumpToMessage(index);
-                                    },
-                              onNext: _adjacentUser(next: true) == null
-                                  ? null
-                                  : () {
-                                      final index = _adjacentUser(next: true);
-                                      if (index != null) _jumpToMessage(index);
-                                    },
-                              onBottom: () => _scrollToBottom(),
-                            ),
+                      Positioned(
+                        right: 16,
+                        bottom: 16,
+                        child: ListenableBuilder(
+                          listenable: _scroll,
+                          builder: (context, _) => ChatNavigation(
+                            visible: _showJump,
+                            onTop: () => _jumpToMessage(0),
+                            onPrevious: _adjacentUser(next: false) == null
+                                ? null
+                                : () {
+                                    final index = _adjacentUser(next: false);
+                                    if (index != null) _jumpToMessage(index);
+                                  },
+                            onNext: _adjacentUser(next: true) == null
+                                ? null
+                                : () {
+                                    final index = _adjacentUser(next: true);
+                                    if (index != null) _jumpToMessage(index);
+                                  },
+                            onBottom: () => _scrollToBottom(),
                           ),
                         ),
+                      ),
                     ],
                   ),
                 ),

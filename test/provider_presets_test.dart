@@ -59,7 +59,7 @@ void main() {
     expect(AppSettings.fromJson(deleted.toJson()).providers.first.isZako, isTrue);
   });
 
-  test('existing Zako keeps its key, endpoints, models and enabled state', () {
+  test('existing Zako keeps user data while its official identity and endpoint are restored', () {
     final p = zakoProvider().copyWith(
       apiKey: 'fixture-key',
       enabled: true,
@@ -69,7 +69,24 @@ void main() {
     );
     final list = normalizeProviders([defaultProviders()[1], p]);
     expect(list.first, same(p));
+    expect(list.first.name, 'Zako AI');
+    expect(list.first.baseUrl, zakoBaseUrl);
+    expect(list.first.builtIn, isTrue);
+    expect(list.first.enabled, isTrue);
+    expect(list.first.apiKey, 'fixture-key');
+    expect(list.first.balancePath, 'remaining');
+    expect(list.first.responsesPath, '/custom/responses');
+    expect(list.first.models.single.modelId, 'my-model');
     expect(list.where((p) => p.isZako), hasLength(1));
+  });
+
+  test('normalization repairs tampered Zako name and base URL', () {
+    final tampered = zakoProvider().copyWith(name: 'Editable name', baseUrl: 'https://example.invalid', enabled: false);
+    final locked = normalizeProviders([tampered]).single;
+    expect(locked.name, 'Zako AI');
+    expect(locked.baseUrl, zakoBaseUrl);
+    expect(locked.builtIn, isTrue);
+    expect(locked.enabled, isTrue);
   });
 
   test('normalization locks Zako on and stably groups enabled providers first', () {

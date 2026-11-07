@@ -310,8 +310,21 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                     value: _p.enabled,
                     onChanged: (v) => _save(_p.copyWith(enabled: v)),
                   ),
-                _Field(controller: _name, label: t('名称', 'Name'), onDone: _saveFields),
-                _Field(controller: _url, label: 'Base URL', hint: 'https://api.example.com/v1', onDone: _saveFields),
+                _Field(
+                  controller: _name,
+                  label: t('名称', 'Name'),
+                  onDone: _saveFields,
+                  enabled: !_p.isZako,
+                  suffix: _p.isZako ? const Icon(Icons.lock_outline_rounded) : null,
+                ),
+                _Field(
+                  controller: _url,
+                  label: 'Base URL',
+                  hint: 'https://api.example.com/v1',
+                  onDone: _saveFields,
+                  enabled: !_p.isZako,
+                  suffix: _p.isZako ? const Icon(Icons.lock_outline_rounded) : null,
+                ),
                 _Field(
                   controller: _key,
                   label: 'API Key',
@@ -544,6 +557,7 @@ class _Field extends StatelessWidget {
     this.hint,
     this.obscure = false,
     this.suffix,
+    this.enabled = true,
     required this.onDone,
   });
   final TextEditingController controller;
@@ -551,6 +565,7 @@ class _Field extends StatelessWidget {
   final String? hint;
   final bool obscure;
   final Widget? suffix;
+  final bool enabled;
   final VoidCallback onDone;
 
   @override
@@ -562,6 +577,7 @@ class _Field extends StatelessWidget {
       },
       child: TextField(
         controller: controller,
+        enabled: enabled,
         obscureText: obscure,
         autocorrect: false,
         enableSuggestions: !obscure,

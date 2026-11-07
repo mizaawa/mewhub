@@ -235,17 +235,21 @@ ProviderConfig zakoProvider() => ProviderConfig(
   enabled: true,
 );
 
-/// Keep Zako enabled and pinned, then enabled providers before disabled ones.
+/// Lock Zako's official identity, URL and enabled state; keep it pinned first.
 /// Filtering preserves the user's relative order within each group.
 List<ProviderConfig> normalizeProviders(List<ProviderConfig> providers) {
   final stored = providers.where((p) => p.isZako).firstOrNull;
   final official = stored == null
       ? zakoProvider()
-      : !stored.builtIn
-      ? ProviderConfig.fromJson({...stored.toJson(), 'builtIn': true, 'enabled': true})
-      : stored.enabled
+      : stored.builtIn && stored.enabled && stored.name == 'Zako AI' && stored.baseUrl == zakoBaseUrl
       ? stored
-      : stored.copyWith(enabled: true);
+      : ProviderConfig.fromJson({
+          ...stored.toJson(),
+          'name': 'Zako AI',
+          'baseUrl': zakoBaseUrl,
+          'builtIn': true,
+          'enabled': true,
+        });
   final others = providers.where((p) => !p.isZako && !(p.builtIn && p.id == 'p-ollama')).toList();
   return [official, ...others.where((p) => p.enabled), ...others.where((p) => !p.enabled)];
 }

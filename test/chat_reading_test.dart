@@ -226,7 +226,7 @@ void main() {
     expect(find.byKey(const ValueKey('chat-navigation')), findsNothing);
   });
 
-  testWidgets('navigation expands on scroll, collapses at rest and hides at bottom', (tester) async {
+  testWidgets('navigation appears as four compact buttons after scroll and hides at rest or bottom', (tester) async {
     final position = await open(tester);
     expect(find.byKey(const ValueKey('chat-navigation')), findsNothing);
     final scrollable = find.byType(Scrollable).first;
@@ -235,10 +235,16 @@ void main() {
     for (final tip in ['到最顶部', '上一条我的消息', '下一条我的消息', '到最底部']) {
       expect(find.byTooltip(tip), findsOneWidget);
     }
+    expect(find.byTooltip('展开消息导航'), findsNothing);
+    final tiles = find.byWidgetPredicate((w) => w.key.toString().contains('jump-tile-'));
+    expect(tiles, findsNWidgets(4));
+    for (final tile in tiles.evaluate()) {
+      expect(tester.getSize(find.byWidget(tile.widget)), const Size(24, 24));
+    }
     await _frames(tester, 180);
-    expect(find.byTooltip('展开消息导航'), findsOneWidget);
-    await tester.tap(find.byTooltip('展开消息导航'));
-    await _frames(tester, 15);
+    expect(find.byKey(const ValueKey('chat-navigation')), findsNothing);
+    await tester.drag(scrollable, const Offset(0, 100));
+    await _frames(tester, 12);
     expect(find.byTooltip('到最顶部'), findsOneWidget);
     await tester.tap(find.byTooltip('到最顶部'));
     await _frames(tester, 60);
@@ -262,6 +268,37 @@ void main() {
     final mask = tester.widget<ShaderMask>(find.byKey(const ValueKey('chat-top-fade')));
     expect(mask.blendMode, BlendMode.dstIn);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Rikka scroll trigger expires independently from streaming and hides during drag', (tester) async {
+    final position = await open(tester);
+    final gesture = await tester.startGesture(const Offset(150, 350));
+    await gesture.moveBy(const Offset(0, 250));
+    await _frames(tester, 10);
+    expect(find.byKey(const ValueKey('chat-navigation')), findsNothing);
+    expect(find.byKey(const ValueKey('streaming-below')), findsOneWidget);
+    await gesture.up();
+    await _frames(tester, 10);
+    expect(find.byKey(const ValueKey('chat-navigation')), findsOneWidget);
+    final reading = position.pixels;
+    for (var chunk = 0; chunk < 8; chunk++) {
+      grow();
+      await _frames(tester, 16);
+    }
+    expect(find.byKey(const ValueKey('chat-navigation')), findsNothing);
+    expect(find.byKey(const ValueKey('streaming-below')), findsOneWidget);
+    expect(position.pixels, closeTo(reading, 0.5));
+    // Rikka expires a long uninterrupted scroll as well.
+    final longDrag = await tester.startGesture(const Offset(150, 350));
+    await longDrag.moveBy(const Offset(0, 100));
+    await _frames(tester, 110);
+    await longDrag.up();
+    await _frames(tester, 10);
+    expect(find.byKey(const ValueKey('chat-navigation')), findsNothing);
+    // A fresh short gesture arms the controls again.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -60));
+    await _frames(tester, 10);
+    expect(find.byKey(const ValueKey('chat-navigation')), findsOneWidget);
   });
 
   testWidgets('drag interrupts follow immediately and reaching bottom resumes it', (tester) async {
@@ -348,8 +385,8 @@ void main() {
     await tester.tap(find.byTooltip('到最顶部'));
     await _frames(tester, 100);
     expect(position.pixels, closeTo(0, 1));
-    final previous = find.widgetWithIcon(IconButton, Icons.keyboard_arrow_up_rounded);
-    expect(tester.widget<IconButton>(previous).onPressed, isNull);
+    final previous = find.descendant(of: find.byTooltip('上一条我的消息'), matching: find.byType(InkWell));
+    expect(tester.widget<InkWell>(previous).onTap, isNull);
     for (final index in [3, 6, 9]) {
       await tester.tap(find.byTooltip('下一条我的消息'));
       await _frames(tester, 55);

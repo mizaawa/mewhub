@@ -87,7 +87,7 @@ void main() {
     }
 
     final position = tester.state<ScrollableState>(find.byType(Scrollable).first).position;
-    position.jumpTo(position.maxScrollExtent - 300);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 300));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -119,10 +119,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expectClear('keyboard open');
 
-    await tester.tap(find.byTooltip('展开消息导航'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 260));
-    expectClear('expanded navigation');
+    final buttons = find.byWidgetPredicate((w) => w.key.toString().contains('jump-tile-'));
+    expect(buttons, findsNWidgets(4));
+    for (final button in buttons.evaluate()) {
+      expect(tester.getSize(find.byWidget(button.widget)), const Size(24, 24));
+    }
     await tester.tap(find.byTooltip('到最底部'));
     await tester.pump();
     for (var frame = 0; frame < 40; frame++) {

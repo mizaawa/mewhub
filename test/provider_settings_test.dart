@@ -92,6 +92,16 @@ void main() {
       expect(find.widgetWithText(SwitchListTile, '启用'), findsNothing);
       expect(tester.getTopLeft(find.text('前往 Zako AI')).dy, lessThan(tester.getTopLeft(find.text('基本')).dy));
       expect(find.text(zakoBaseUrl), findsOneWidget);
+      final nameField = tester.widget<TextField>(
+        find.byWidgetPredicate((w) => w is TextField && w.decoration?.labelText == '名称'),
+      );
+      final urlField = tester.widget<TextField>(
+        find.byWidgetPredicate((w) => w is TextField && w.decoration?.labelText == 'Base URL'),
+      );
+      expect(nameField.enabled, isFalse);
+      expect(nameField.controller!.text, 'Zako AI');
+      expect(urlField.enabled, isFalse);
+      expect(urlField.controller!.text, zakoBaseUrl);
       await tester.tap(find.text('前往 Zako AI'));
       await tester.pumpAndSettle();
       expect(launches.single.method, 'launch');
@@ -137,7 +147,12 @@ void main() {
   });
 
   test('store rejects disabling or deleting Zako and persists the locked configuration', () async {
-    final p = store.value.providers.first.copyWith(apiKey: 'fixture-key', enabled: false);
+    final p = store.value.providers.first.copyWith(
+      apiKey: 'fixture-key',
+      name: 'Edited',
+      baseUrl: 'https://example.invalid',
+      enabled: false,
+    );
     store.upsertProvider(p);
     expect(store.value.providers.first.enabled, isTrue);
     store.removeProvider(zakoProviderId);
@@ -150,6 +165,8 @@ void main() {
     expect(reloaded.value.providers.first.id, zakoProviderId);
     expect(reloaded.value.providers.first.enabled, isTrue);
     expect(reloaded.value.providers.first.apiKey, 'fixture-key');
+    expect(reloaded.value.providers.first.name, 'Zako AI');
+    expect(reloaded.value.providers.first.baseUrl, zakoBaseUrl);
     store.removeProvider('p-openai');
     expect(store.value.providers.any((p) => p.id == 'p-openai'), isFalse);
     await store.flush();
@@ -171,9 +188,11 @@ void main() {
     // Only the API client uses a real loopback connection; site icons retain
     // Flutter's offline HTTP stub, so this test never contacts an external site.
     HttpOverrides.runWithHttpOverrides(Net.reconfigure, _LoopbackHttpOverrides());
-    store.upsertProvider(
-      store.value.providers.first.copyWith(baseUrl: 'http://127.0.0.1:${server!.port}', apiKey: 'fixture-key'),
+    final fixture = store.value.providers.first.copyWith(
+      apiKey: 'fixture-key',
+      balanceUrl: 'http://127.0.0.1:${server!.port}/usage',
     );
+    store.upsertProvider(fixture);
     await tester.runAsync(store.flush);
     I18n.apply(AppLang.zh);
     await tester.pumpWidget(app(const ProviderDetailPage(providerId: zakoProviderId)));
