@@ -248,7 +248,6 @@ class MessageBubble extends StatelessWidget {
                 bottomLeft: Radius.circular(20),
                 bottomRight: Radius.circular(20),
               ),
-              border: Border.all(color: scheme.outlineVariant),
             ),
             child: content,
           )
@@ -444,11 +443,7 @@ class _DocChip extends StatelessWidget {
     return Container(
       constraints: const BoxConstraints(maxWidth: 240),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
+      decoration: BoxDecoration(color: scheme.surfaceContainerLow, borderRadius: BorderRadius.circular(12)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

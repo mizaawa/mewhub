@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 
 import '../../ai/message.dart';
 import '../../chat/chat_controller.dart';
@@ -19,6 +23,7 @@ import '../export.dart';
 import '../widgets/common.dart';
 import '../widgets/motion.dart';
 import 'chat_drawer.dart';
+import 'chat_navigation.dart';
 import 'composer.dart';
 import 'message_bubble.dart';
 import 'model_picker.dart';
@@ -30,49 +35,200 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin {
   final _scaffold = GlobalKey<ScaffoldState>();
   final _composer = GlobalKey<ComposerState>();
-  final _scroll = ScrollController();
+  final _scroll = ScrollController(keepScrollOffset: false);
+  final _list = ListController();
+  final _messageKeys = <String, GlobalKey>{};
+  late final Ticker _motion;
+  Duration? _lastFrame;
+  Timer? _collapseNavigation;
   bool _stickToBottom = true;
   bool _showJump = false;
+  bool _navigationExpanded = false;
+  bool _userScrolling = false;
+  bool _moving = false;
+  bool _followScheduled = false;
+  int? _seekIndex;
   ChatController? _bound;
-  int _lastCount = 0;
+
+  double get _readingInset => MediaQuery.paddingOf(context).top + kToolbarHeight + 24;
+  bool get _atBottom => _scroll.hasClients && _scroll.position.extentAfter <= 2;
 
   @override
   void initState() {
     super.initState();
+    _motion = createTicker(_tick);
     _scroll.addListener(_onScroll);
   }
 
   @override
   void dispose() {
     _bound?.removeListener(_onChat);
+    _collapseNavigation?.cancel();
+    _motion.dispose();
+    _list.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  // The list is reversed: offset 0 is the bottom.
   void _onScroll() {
-    final atBottom = _scroll.hasClients && _scroll.offset < 80;
-    if (atBottom != _stickToBottom || _showJump == atBottom) {
-      setState(() {
-        _stickToBottom = atBottom;
-        _showJump = !atBottom;
-      });
+    if (!_moving && !_motion.isActive && !_userScrolling) {
+      _stickToBottom = _atBottom;
     }
+    _updateNavigation();
+  }
+
+  void _updateNavigation() {
+    if (!mounted) return;
+    final show = !_stickToBottom && !_atBottom;
+    if (_showJump != show) setState(() => _showJump = show);
+  }
+
+  void _expandNavigation() {
+    _collapseNavigation?.cancel();
+    if (!_navigationExpanded) setState(() => _navigationExpanded = true);
+    _collapseLater();
+  }
+
+  void _collapseLater() {
+    _collapseNavigation?.cancel();
+    _collapseNavigation = Timer(const Duration(seconds: 2), () {
+      if (!mounted || _userScrolling) return;
+      setState(() => _navigationExpanded = false);
+    });
+  }
+
+  void _stopMotion() {
+    _motion.stop();
+    _lastFrame = null;
+    _seekIndex = null;
+  }
+
+  bool _onScrollNotification(ScrollNotification notification) {
+    // Horizontal code/table scrolling must not change the chat's follow mode.
+    if (notification.depth != 0 || notification.metrics.axis != Axis.vertical || _moving) return false;
+    if ((notification is ScrollStartNotification && notification.dragDetails != null) ||
+        (notification is UserScrollNotification && notification.direction != ScrollDirection.idle)) {
+      _stopMotion();
+      _userScrolling = true;
+      _stickToBottom = false;
+      _expandNavigation();
+    } else if (notification is ScrollUpdateNotification && _userScrolling) {
+      _expandNavigation();
+    } else if (notification is ScrollEndNotification && _userScrolling) {
+      _userScrolling = false;
+      _stickToBottom = _atBottom;
+      _collapseLater();
+      if (_stickToBottom) _scheduleFollow();
+    }
+    _updateNavigation();
+    return false;
+  }
+
+  void _scheduleFollow() {
+    if (_followScheduled) return;
+    _followScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _followScheduled = false;
+      if (!mounted || !_scroll.hasClients || !_list.isAttached) return;
+      if (_stickToBottom && !_userScrolling) _startMotion();
+      _updateNavigation();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _startMotion() {
+    if (!_motion.isActive) {
+      _lastFrame = null;
+      _motion.start();
+    }
+  }
+
+  double _targetOffset() {
+    final count = _list.numberOfItems;
+    if (count == 0) return 0;
+    final index = _seekIndex;
+    final target = index == null ? _scroll.position.maxScrollExtent : _messageOffset(index.clamp(0, count - 1));
+    return target.clamp(_scroll.position.minScrollExtent, _scroll.position.maxScrollExtent);
+  }
+
+  double _messageOffset(int index) {
+    final node = _bound!.conversation.nodes[index];
+    final render = _messageKeys[node.id]?.currentContext?.findRenderObject();
+    if (render is RenderBox && render.hasSize) {
+      return RenderAbstractViewport.of(render).getOffsetToReveal(render, 0).offset - _readingInset;
+    }
+    // Seek through unbuilt messages using the list's cached extents, then use
+    // the actual render position once the target enters the viewport.
+    var offset = 0.0;
+    for (var i = 0; i < index; i++) {
+      offset += _list.extentForIndex(i).$1;
+    }
+    return offset;
+  }
+
+  void _tick(Duration elapsed) {
+    if (!_scroll.hasClients || !_list.isAttached || _userScrolling || (!_stickToBottom && _seekIndex == null)) {
+      _stopMotion();
+      return;
+    }
+    final target = _targetOffset();
+    final delta = target - _scroll.offset;
+    final dt = _lastFrame == null ? 16.0 : (elapsed - _lastFrame!).inMicroseconds / 1000;
+    _lastFrame = elapsed;
+    // Retarget the same motion every frame. New tokens never restart an
+    // animation, and a drag cancels following before moving a single pixel.
+    final finished = delta.abs() < 0.5 || MediaQuery.disableAnimationsOf(context);
+    final next = finished ? target : _scroll.offset + delta * (1 - math.exp(-dt.clamp(1, 64) / 85));
+    _moving = true;
+    if (next != _scroll.offset) _scroll.jumpTo(next);
+    _moving = false;
+    if (finished) _stopMotion();
+    _updateNavigation();
+  }
+
+  int? _adjacentUser({required bool next}) {
+    if (!_list.isAttached || !_scroll.hasClients) return null;
+    final nodes = _bound!.conversation.nodes;
+    if (nodes.isEmpty) return null;
+    final visible = _list.visibleRange;
+    var current = _seekIndex ?? visible?.$1 ?? 0;
+    if (_seekIndex == null && visible != null) {
+      final readingLine = _scroll.offset + 2;
+      for (var i = visible.$1; i <= visible.$2 && i < nodes.length; i++) {
+        if (_messageOffset(i) <= readingLine) current = i;
+      }
+    }
+    for (var i = current + (next ? 1 : -1); i >= 0 && i < nodes.length; i += next ? 1 : -1) {
+      if (nodes[i].role == Role.user) return i;
+    }
+    return null;
+  }
+
+  void _jumpToMessage(int index) {
+    _stopMotion();
+    _stickToBottom = false;
+    _userScrolling = false;
+    _seekIndex = index;
+    _expandNavigation();
+    _startMotion();
   }
 
   void _bind(ChatController c) {
     if (identical(_bound, c)) return;
     _bound?.removeListener(_onChat);
     _bound = c;
+    _messageKeys.clear();
     c.addListener(_onChat);
-    _lastCount = c.conversation.nodes.length;
+    _stopMotion();
+    _collapseNavigation?.cancel();
+    _showJump = false;
+    _navigationExpanded = false;
+    _userScrolling = false;
     _stickToBottom = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(0);
-    });
+    _scrollToBottom(animate: false);
   }
 
   void _onChat() {
@@ -82,22 +238,28 @@ class _ChatPageState extends State<ChatPage> {
       toast(context, c.lastError!, error: true);
       c.lastError = null;
     }
-    final n = c.conversation.nodes.length;
-    if (n != _lastCount) {
-      _lastCount = n;
-      _scrollToBottom();
-    }
+    if (_stickToBottom) _scheduleFollow();
   }
 
   void _scrollToBottom({bool animate = true}) {
+    _stopMotion();
+    _stickToBottom = true;
+    _userScrolling = false;
+    final bound = _bound;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scroll.hasClients) return;
-      if (animate) {
-        _scroll.animateTo(0, duration: const Duration(milliseconds: 380), curve: Curves.easeOutCubic);
-      } else {
-        _scroll.jumpTo(0);
+      if (!mounted || !identical(bound, _bound) || !_scroll.hasClients || !_list.isAttached || !_stickToBottom) return;
+      if (!animate) {
+        _moving = true;
+        if (_list.numberOfItems > 0) {
+          _list.jumpToItem(index: _list.numberOfItems - 1, scrollController: _scroll, alignment: 1);
+        }
+        _moving = false;
       }
+      _startMotion();
+      _updateNavigation();
     });
+    // Also used from a tap without a conversation update.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   Future<void> _onAction(ChatController c, int index, MessageAction a) async {
@@ -256,22 +418,56 @@ class _ChatPageState extends State<ChatPage> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _messages(context, c, conv),
-                      Positioned(
-                        right: 16,
-                        bottom: 16,
-                        child: AnimatedScale(
-                          scale: _showJump ? 1 : 0,
-                          duration: const Duration(milliseconds: 260),
-                          curve: Curves.easeOutBack,
-                          child: FloatingActionButton.small(
-                            heroTag: 'jump',
-                            elevation: 2,
-                            onPressed: () => _scrollToBottom(),
-                            child: const Icon(Icons.keyboard_double_arrow_down_rounded),
+                      ShaderMask(
+                        key: const ValueKey('chat-top-fade'),
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (bounds) => const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Color(0x26000000), Colors.black],
+                          stops: [0, 0.6, 1],
+                        ).createShader(Rect.fromLTWH(0, 0, bounds.width, math.min(_readingInset, bounds.height))),
+                        child: _messages(context, c, conv),
+                      ),
+                      if (_showJump && c.generating)
+                        Positioned(
+                          bottom: 16,
+                          left: 0,
+                          right: 72,
+                          child: Center(
+                            child: StreamingBelow(
+                              key: const ValueKey('streaming-below'),
+                              onTap: () => _scrollToBottom(),
+                            ),
                           ),
                         ),
-                      ),
+                      if (_showJump)
+                        Positioned(
+                          right: 16,
+                          bottom: 16,
+                          child: ListenableBuilder(
+                            listenable: _scroll,
+                            builder: (context, _) => ChatNavigation(
+                              key: const ValueKey('chat-navigation'),
+                              expanded: _navigationExpanded,
+                              onExpand: _expandNavigation,
+                              onTop: () => _jumpToMessage(0),
+                              onPrevious: _adjacentUser(next: false) == null
+                                  ? null
+                                  : () {
+                                      final index = _adjacentUser(next: false);
+                                      if (index != null) _jumpToMessage(index);
+                                    },
+                              onNext: _adjacentUser(next: true) == null
+                                  ? null
+                                  : () {
+                                      final index = _adjacentUser(next: true);
+                                      if (index != null) _jumpToMessage(index);
+                                    },
+                              onBottom: () => _scrollToBottom(),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -325,6 +521,7 @@ class _ChatPageState extends State<ChatPage> {
         final scaffold = Scaffold(
           key: _scaffold,
           backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: true,
           drawer: wide ? null : const ChatDrawer(),
           drawerEdgeDragWidth: 48,
           appBar: _appBar(context, c, wide),
@@ -459,37 +656,57 @@ class _ChatPageState extends State<ChatPage> {
   Widget _messages(BuildContext context, ChatController c, Conversation conv) {
     final app = context.watch<AppState>();
     final s = context.read<SettingsStore>().value;
-    if (conv.nodes.isEmpty) return _Welcome(onPick: (v) => _composer.currentState?.setText(v));
+    if (conv.nodes.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.only(top: _readingInset),
+        child: _Welcome(onPick: (v) => _composer.currentState?.setText(v)),
+      );
+    }
     final nodes = conv.nodes;
-    return ListView.builder(
-      controller: _scroll,
-      reverse: true,
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.only(top: 12, bottom: 12),
-      itemCount: nodes.length,
-      itemBuilder: (context, rev) {
-        final i = nodes.length - 1 - rev;
-        final node = nodes[i];
-        final isLast = i == nodes.length - 1;
-        final streaming = isLast && c.generating && node.role == Role.assistant;
-        final bubble = MessageBubble(
-          key: ValueKey(node.id),
-          node: node,
-          index: i,
-          assistant: c.assistant,
-          display: s.display,
-          streaming: streaming,
-          isLast: isLast,
-          favorite: app.favoriteIds.contains(node.current.id),
-          error: isLast ? c.lastError : null,
-          onAction: (a) => _onAction(c, i, a),
-          onApprove: (id, ok) => c.resolveApproval(id, ok),
-        );
-        final summary = node.current.parts.any((p) => p is TextPart && p.meta?['summary'] == true);
-        final child = summary ? _SummaryDivider(child: bubble) : bubble;
-        // Only animate the most recent messages to keep long chats smooth.
-        return rev < 2 ? EntranceFx(key: ValueKey('fx-${node.id}'), dy: 18, child: child) : child;
+    final indices = {for (var i = 0; i < nodes.length; i++) nodes[i].id: i};
+    _messageKeys.removeWhere((id, _) => !indices.containsKey(id));
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (notification) {
+        if (notification.depth == 0 && notification.metrics.axis == Axis.vertical) _scheduleFollow();
+        return false;
       },
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onScrollNotification,
+        child: SuperListView.builder(
+          key: ValueKey(conv.id),
+          controller: _scroll,
+          listController: _list,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.only(top: _readingInset, bottom: 12),
+          itemCount: nodes.length,
+          findChildIndexCallback: (key) => key is ValueKey<String> ? indices[key.value] : null,
+          itemBuilder: (context, i) {
+            final node = nodes[i];
+            final isLast = i == nodes.length - 1;
+            final streaming = isLast && c.generating && node.role == Role.assistant;
+            final bubble = MessageBubble(
+              key: ValueKey(node.id),
+              node: node,
+              index: i,
+              assistant: c.assistant,
+              display: s.display,
+              streaming: streaming,
+              isLast: isLast,
+              favorite: app.favoriteIds.contains(node.current.id),
+              error: isLast ? c.lastError : null,
+              onAction: (a) => _onAction(c, i, a),
+              onApprove: (id, ok) => c.resolveApproval(id, ok),
+            );
+            final summary = node.current.parts.any((p) => p is TextPart && p.meta?['summary'] == true);
+            final child = summary ? _SummaryDivider(child: bubble) : bubble;
+            // Stable identity keeps expanded code/reasoning state while appending.
+            return KeyedSubtree(
+              key: ValueKey(node.id),
+              child: SizedBox(key: _messageKeys.putIfAbsent(node.id, GlobalKey.new), child: child),
+            );
+          },
+        ),
+      ),
     );
   }
 }

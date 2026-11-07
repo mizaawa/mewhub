@@ -76,7 +76,6 @@ class _ReasoningCardState extends State<ReasoningCard> {
         decoration: BoxDecoration(
           color: scheme.primary.withValues(alpha: thinking ? 0.07 : 0.045),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: scheme.primary.withValues(alpha: thinking ? 0.25 : 0.12)),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(

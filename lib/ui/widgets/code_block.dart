@@ -98,11 +98,7 @@ class _CodeBlockState extends State<CodeBlock> {
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -142,11 +142,7 @@ class _ToolCardState extends State<ToolCard> {
       padding: const EdgeInsets.only(bottom: 8),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: p.pending ? scheme.primary.withValues(alpha: 0.5) : scheme.outlineVariant),
-        ),
+        decoration: BoxDecoration(color: scheme.surfaceContainerLow, borderRadius: BorderRadius.circular(16)),
         clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

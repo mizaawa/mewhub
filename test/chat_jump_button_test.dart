@@ -59,8 +59,8 @@ void main() {
 
   tearDown(() async {
     app.dispose();
-    await store.flush();
     store.dispose();
+    await store.flush();
     await temp.delete(recursive: true);
   });
 
@@ -82,17 +82,16 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    for (var frame = 0; frame < 50; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
 
-    final list = tester.widget<ListView>(find.byType(ListView).first);
-    list.controller!.jumpTo(300);
+    final position = tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+    position.jumpTo(position.maxScrollExtent - 300);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    final jump = find.ancestor(
-      of: find.byIcon(Icons.keyboard_double_arrow_down_rounded),
-      matching: find.byType(FloatingActionButton),
-    );
+    final jump = find.byKey(const ValueKey('chat-navigation'));
     final reasoning = find.byWidgetPredicate((widget) => widget is Tooltip && widget.message == '思考强度');
     expect(jump, findsOneWidget);
     expect(reasoning, findsOneWidget);
@@ -120,15 +119,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expectClear('keyboard open');
 
-    await tester.tap(jump);
+    await tester.tap(find.byTooltip('展开消息导航'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    expectClear('expanded navigation');
+    await tester.tap(find.byTooltip('到最底部'));
     await tester.pump();
     for (var frame = 0; frame < 40; frame++) {
       await tester.pump(const Duration(milliseconds: 20));
     }
-    expect(list.controller!.offset, 0);
-    final scale = tester.widget<AnimatedScale>(find.ancestor(of: jump, matching: find.byType(AnimatedScale)));
-    expect(scale.scale, 0);
-    debugPrint('after jump: scroll=${list.controller!.offset}, button scale=${scale.scale}');
+    expect(position.extentAfter, lessThan(1));
+    expect(jump, findsNothing);
+    debugPrint('after jump: remaining=${position.extentAfter}, navigation hidden');
     expect(tester.takeException(), isNull);
   });
 }

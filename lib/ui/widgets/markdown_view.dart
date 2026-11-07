@@ -55,6 +55,10 @@ class MarkdownView extends StatelessWidget {
         backgroundColor: scheme.primary.withValues(alpha: dark ? 0.18 : 0.10),
         color: dark ? const Color(0xFFF3D9C2) : const Color(0xFF8B4F28),
       ),
+      // The custom CodeBlock owns its surface and clipping. The markdown
+      // package still decorates `pre`, which otherwise leaves a square halo.
+      codeblockPadding: EdgeInsets.zero,
+      codeblockDecoration: const BoxDecoration(),
       blockquoteDecoration: BoxDecoration(
         color: scheme.primary.withValues(alpha: 0.06),
         border: Border(left: BorderSide(color: scheme.primary.withValues(alpha: 0.6), width: 3)),
