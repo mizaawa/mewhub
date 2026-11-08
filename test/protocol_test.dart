@@ -26,6 +26,7 @@ Future<Captured> runAgainst(
   List<String> events,
   GenerationParams params, {
   List<ChatMessage>? messages,
+  void Function(List<Part> parts)? onParts,
 }) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final seen = Completer<(Map<String, dynamic>, Map<String, String>, String)>();
@@ -46,6 +47,7 @@ Future<Captured> runAgainst(
     final acc = PartAccumulator();
     await for (final c in provider.stream(messages ?? [ChatMessage.text(Role.user, 'hi')], params)) {
       acc.add(c);
+      onParts?.call(List.unmodifiable(acc.parts));
     }
     acc.closeAll();
     final (body, headers, path) = await seen.future;
@@ -153,9 +155,31 @@ void main() {
   });
 
   test('OpenAI Responses: reasoning summary, encrypted content, function call', () async {
+    final searchStatuses = <(String, bool)>[];
     final r = await runAgainst(
       (b) => ProviderConfig(kind: ProviderKind.openai, name: 'x', baseUrl: b, apiKey: 'k', useResponsesApi: true),
       [
+        sse({
+          'type': 'response.output_item.added',
+          'item': {
+            'type': 'web_search_call',
+            'id': 'ws_1',
+            'status': 'in_progress',
+            'action': {'type': 'search', 'query': 'Flutter documentation'},
+          },
+        }),
+        sse({'type': 'response.web_search_call.in_progress', 'item_id': 'ws_1'}),
+        sse({'type': 'response.web_search_call.searching', 'item_id': 'ws_1'}),
+        sse({'type': 'response.web_search_call.completed', 'item_id': 'ws_1'}),
+        sse({
+          'type': 'response.output_item.done',
+          'item': {
+            'type': 'web_search_call',
+            'id': 'ws_1',
+            'status': 'completed',
+            'action': {'type': 'search', 'query': 'Flutter documentation'},
+          },
+        }),
         sse({'type': 'response.reasoning_summary_text.delta', 'item_id': 'rs_1', 'delta': 'Plan'}),
         sse({
           'type': 'response.output_item.done',
@@ -185,20 +209,42 @@ void main() {
           },
         }),
       ],
-      GenerationParams(model: reasoningTools, reasoning: ReasoningLevel.medium, tools: [timeTool]),
+      GenerationParams(
+        model: reasoningTools,
+        reasoning: ReasoningLevel.medium,
+        tools: [timeTool],
+        useBuiltInSearch: true,
+      ),
       messages: [ChatMessage.text(Role.system, 'sys'), ChatMessage.text(Role.user, 'hi')],
+      onParts: (parts) {
+        final searches = parts.whereType<ServerToolPart>().toList();
+        if (searches.isNotEmpty) {
+          final search = searches.single;
+          final status = ((search.meta?['status'] as String?) ?? '', search.done);
+          if (searchStatuses.isEmpty || searchStatuses.last != status) searchStatuses.add(status);
+        }
+      },
     );
     expect(r.path, '/v1/responses');
     expect(r.body['store'], isFalse);
     expect(r.body['instructions'], 'sys');
     expect(r.body['reasoning'], {'summary': 'auto', 'effort': 'medium'});
     expect(r.body['include'], ['reasoning.encrypted_content']);
-    final reasoning = r.parts[0] as ReasoningPart;
+    expect((r.body['tools'] as List).map((tool) => (tool as Map)['type']), contains('web_search'));
+    final search = r.parts.whereType<ServerToolPart>().single;
+    expect(search.done, isTrue);
+    expect(search.meta?['status'], 'completed');
+    expect((search.input as Map)['query'], 'Flutter documentation');
+    expect(search.startedAt, isNotNull);
+    expect(search.finishedAt, isNotNull);
+    expect(searchStatuses.map((e) => e.$1).toList(), ['in_progress', 'searching', 'completed']);
+    expect(searchStatuses.map((e) => e.$2).toList(), [false, false, true]);
+    final reasoning = r.parts[1] as ReasoningPart;
     expect(reasoning.text, 'Plan');
     expect(reasoning.meta?['enc'], 'ENC');
     expect(reasoning.meta?['rid'], 'rs_1');
-    expect((r.parts[1] as TextPart).text, 'Done');
-    expect((r.parts[2] as ToolPart).callId, 'call_9');
+    expect((r.parts[2] as TextPart).text, 'Done');
+    expect((r.parts[3] as ToolPart).callId, 'call_9');
     expect(r.usage.cached, 10);
   });
 

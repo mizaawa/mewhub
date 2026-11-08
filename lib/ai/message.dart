@@ -51,6 +51,8 @@ sealed class Part {
           input: j['input'],
           output: j['output'],
           done: asBool(j['done'], true),
+          startedAt: dateFromMsOrNull(j['startedAt']),
+          finishedAt: dateFromMsOrNull(j['finishedAt']),
           meta: meta,
         );
       case 'citations':
@@ -193,6 +195,8 @@ class ServerToolPart extends Part {
     this.input,
     this.output,
     this.done = true,
+    this.startedAt,
+    this.finishedAt,
     this.meta,
   });
   final String callId;
@@ -200,6 +204,8 @@ class ServerToolPart extends Part {
   final dynamic input;
   final dynamic output;
   final bool done;
+  final DateTime? startedAt;
+  final DateTime? finishedAt;
   final Map<String, dynamic>? meta;
 
   @override
@@ -210,6 +216,8 @@ class ServerToolPart extends Part {
     if (input != null) 'input': input,
     if (output != null) 'output': output,
     'done': done,
+    if (startedAt != null) 'startedAt': startedAt!.millisecondsSinceEpoch,
+    if (finishedAt != null) 'finishedAt': finishedAt!.millisecondsSinceEpoch,
     if (meta != null) 'meta': meta,
   };
 }

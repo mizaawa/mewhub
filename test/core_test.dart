@@ -74,6 +74,50 @@ void main() {
         ..add(const CitationChunk([Citation(title: 'a2', url: 'https://a'), Citation(title: 'b', url: 'https://b')]));
       expect((acc.parts.single as CitationsPart).items.map((e) => e.url), ['https://a', 'https://b']);
     });
+
+    test('updates one native search call and preserves its measured duration', () {
+      final started = DateTime.utc(2026, 11, 8, 3);
+      final finished = started.add(const Duration(seconds: 2));
+      final acc = PartAccumulator()
+        ..add(
+          ServerToolChunk(
+            ServerToolPart(
+              callId: 'ws_1',
+              name: 'web_search',
+              done: false,
+              startedAt: started,
+              meta: {'status': 'in_progress'},
+            ),
+          ),
+        )
+        ..add(
+          ServerToolChunk(
+            ServerToolPart(callId: 'ws_1', name: 'web_search', done: false, meta: {'status': 'searching'}),
+          ),
+        )
+        ..add(
+          ServerToolChunk(
+            ServerToolPart(
+              callId: 'ws_1',
+              name: 'web_search',
+              done: true,
+              finishedAt: finished,
+              meta: {'status': 'completed'},
+            ),
+          ),
+        );
+
+      expect(acc.parts.whereType<ServerToolPart>(), hasLength(1));
+      final search = acc.parts.single as ServerToolPart;
+      expect(search.done, isTrue);
+      expect(search.startedAt?.millisecondsSinceEpoch, started.millisecondsSinceEpoch);
+      expect(search.finishedAt?.millisecondsSinceEpoch, finished.millisecondsSinceEpoch);
+      expect(search.meta?['status'], 'completed');
+
+      final restored = Part.fromJson(search.toJson()) as ServerToolPart;
+      expect(restored.startedAt?.millisecondsSinceEpoch, started.millisecondsSinceEpoch);
+      expect(restored.finishedAt?.millisecondsSinceEpoch, finished.millisecondsSinceEpoch);
+    });
   });
 
   group('Serialization', () {

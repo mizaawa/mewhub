@@ -70,6 +70,17 @@ class OpenAiResponsesProvider extends AiProvider with OpenAiCommon {
               argsSeen.add(callId);
               yield ToolCallDelta(callId, args);
             }
+          } else if (item['type'] == 'web_search_call') {
+            yield ServerToolChunk(
+              ServerToolPart(
+                callId: asStr(item['id']),
+                name: 'web_search',
+                input: item['action'],
+                done: false,
+                startedAt: DateTime.now(),
+                meta: {'status': asStr(item['status'], 'in_progress'), 'raw': item},
+              ),
+            );
           }
         case 'response.function_call_arguments.delta':
           final itemId = asStr(j['item_id']);
@@ -99,7 +110,8 @@ class OpenAiResponsesProvider extends AiProvider with OpenAiCommon {
                   name: 'web_search',
                   input: item['action'],
                   done: true,
-                  meta: {'raw': item},
+                  finishedAt: DateTime.now(),
+                  meta: {'status': 'completed', 'raw': item},
                 ),
               );
             case 'image_generation_call':
@@ -111,6 +123,22 @@ class OpenAiResponsesProvider extends AiProvider with OpenAiCommon {
                 if (ann.isNotEmpty) yield CitationChunk(parseUrlCitations(ann));
               }
           }
+        case 'response.web_search_call.in_progress':
+        case 'response.web_search_call.searching':
+        case 'response.web_search_call.completed':
+          final status = type.substring('response.web_search_call.'.length);
+          final now = DateTime.now();
+          yield ServerToolChunk(
+            ServerToolPart(
+              callId: asStr(j['item_id']),
+              name: 'web_search',
+              input: j['action'],
+              done: status == 'completed',
+              startedAt: now,
+              finishedAt: status == 'completed' ? now : null,
+              meta: {'status': status, 'raw': j},
+            ),
+          );
         case 'response.completed':
         case 'response.incomplete':
           final resp = asMap(j['response']);
@@ -147,6 +175,16 @@ class OpenAiResponsesProvider extends AiProvider with OpenAiCommon {
         final callId = asStr(item['call_id'], asStr(item['id']));
         yield ToolCallStart(callId, asStr(item['name']), meta: {'item_id': asStr(item['id'])});
         yield ToolCallDelta(callId, asStr(item['arguments']));
+      case 'web_search_call':
+        yield ServerToolChunk(
+          ServerToolPart(
+            callId: asStr(item['id']),
+            name: 'web_search',
+            input: item['action'],
+            done: true,
+            meta: {'status': 'completed', 'raw': item},
+          ),
+        );
     }
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../ai/message.dart';
@@ -184,7 +186,7 @@ class MessageBubble extends StatelessWidget {
           );
         case ServerToolPart():
           if (p.name != 'web_search_result') {
-            children.add(_ServerToolChip(part: p));
+            children.add(_ServerToolChip(key: ValueKey('s-${p.callId}'), part: p));
           }
         case ImagePart(:final url):
           children.add(NetworkImageTile(url: url));
@@ -463,15 +465,63 @@ class _DocChip extends StatelessWidget {
   }
 }
 
-class _ServerToolChip extends StatelessWidget {
-  const _ServerToolChip({required this.part});
+class _ServerToolChip extends StatefulWidget {
+  const _ServerToolChip({super.key, required this.part});
   final ServerToolPart part;
+
+  @override
+  State<_ServerToolChip> createState() => _ServerToolChipState();
+}
+
+class _ServerToolChipState extends State<_ServerToolChip> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.part.done) _startTicker();
+  }
+
+  @override
+  void didUpdateWidget(_ServerToolChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.part.done && widget.part.done) {
+      _ticker?.cancel();
+    } else if (oldWidget.part.done && !widget.part.done) {
+      _startTicker();
+    }
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final part = widget.part;
     final input = asMap(part.input);
     final q = input['query'] ?? asMap(input['action'])['query'] ?? '';
+    final seconds = part.startedAt == null
+        ? ''
+        : ' · ${((part.finishedAt ?? DateTime.now()).difference(part.startedAt!).inMilliseconds / 1000).toStringAsFixed(1)}s';
+    final status = asStr(part.meta?['status']);
+    final label = part.name == 'web_search'
+        ? '${toolLabel(part.name)} · ${switch (status) {
+            'completed' => t('搜索完成', 'Search complete'),
+            'searching' => t('正在搜索', 'Searching'),
+            _ => t('搜索已启动', 'Starting search'),
+          }}$seconds${q.toString().isEmpty ? '' : ': $q'}'
+        : '${toolLabel(part.name)}${q.toString().isEmpty ? '' : ': $q'}';
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -480,7 +530,7 @@ class _ServerToolChip extends StatelessWidget {
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              '${toolLabel(part.name)}${q.toString().isEmpty ? '' : ': $q'}',
+              label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),

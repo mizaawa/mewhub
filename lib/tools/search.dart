@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:xml/xml.dart';
+
 import '../core/net.dart';
 import '../core/util.dart';
 import '../data/models_misc.dart';
@@ -211,31 +213,37 @@ class SearchService {
     }
   }
 
-  /// Keyless fallback: parses Bing's HTML results page.
+  /// Keyless fallback: requests Bing's RSS result feed.
   static Future<SearchResult> _bing(String query, int n) async {
-    final html = await Net.text(
+    final rss = await Net.text(
       'GET',
-      Uri.https('www.bing.com', '/search', {'q': query, 'setlang': 'en'}),
+      Uri.https('www.bing.com', '/search', {'q': query, 'setlang': 'en', 'format': 'rss'}),
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8',
       },
     );
+    return parseBingRss(rss, limit: n);
+  }
+
+  static SearchResult parseBingRss(String rss, {int limit = 5}) {
     final items = <SearchResultItem>[];
-    final blocks = RegExp(r'<li class="b_algo"[\s\S]*?</li>').allMatches(html);
-    for (final b in blocks) {
-      final s = b.group(0)!;
-      final a = RegExp(r'<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>').firstMatch(s);
-      if (a == null) continue;
-      final p = RegExp(r'<p[^>]*>([\s\S]*?)</p>').firstMatch(s);
+    if (limit <= 0) return SearchResult(items);
+    for (final item in XmlDocument.parse(rss).findAllElements('item').take(limit)) {
+      final url = item.getElement('link')?.innerText.trim() ?? '';
+      if (url.isEmpty) continue;
+      final title = item.getElement('title')?.innerText.trim() ?? '';
+      final description = item.getElement('description')?.innerText.trim() ?? '';
+      final date = item.getElement('pubDate')?.innerText.trim();
       items.add(
         SearchResultItem(
-          title: _strip(a.group(2)!),
-          url: _unescape(a.group(1)!),
-          text: p == null ? '' : _strip(p.group(1)!),
+          title: title.isEmpty ? url : _strip(title),
+          url: url,
+          text: description.isEmpty ? '' : truncate(_strip(description), 1500),
+          date: date == null || date.isEmpty ? null : date,
         ),
       );
-      if (items.length >= n) break;
     }
     return SearchResult(items);
   }

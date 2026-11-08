@@ -62,7 +62,35 @@ class PartAccumulator {
         parts[i] = t.copyWith(input: t.input + argsDelta);
       case ServerToolChunk(:final part):
         _closeReasoning();
-        parts.add(part);
+        final i = parts.indexWhere((p) => p is ServerToolPart && p.callId == part.callId && p.name == part.name);
+        if (i < 0) {
+          parts.add(
+            ServerToolPart(
+              callId: part.callId,
+              name: part.name,
+              input: part.input,
+              output: part.output,
+              done: part.done,
+              startedAt: part.startedAt ?? (part.done ? null : DateTime.now()),
+              finishedAt: part.finishedAt,
+              meta: part.meta,
+            ),
+          );
+        } else {
+          final previous = parts[i] as ServerToolPart;
+          final done = previous.done || part.done;
+          final startedAt = previous.startedAt ?? part.startedAt ?? (done ? null : DateTime.now());
+          parts[i] = ServerToolPart(
+            callId: part.callId,
+            name: part.name,
+            input: part.input ?? previous.input,
+            output: part.output ?? previous.output,
+            done: done,
+            startedAt: startedAt,
+            finishedAt: previous.finishedAt ?? part.finishedAt ?? (done && startedAt != null ? DateTime.now() : null),
+            meta: {...?previous.meta, ...?part.meta},
+          );
+        }
       case ImageChunk(:final dataUri, :final meta):
         _closeReasoning();
         parts.add(ImagePart(dataUri, meta: meta));
