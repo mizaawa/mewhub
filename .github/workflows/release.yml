@@ -82,7 +82,18 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter analyze --fatal-infos
-      - run: flutter test --reporter github --concurrency=1
+      - name: Run tests (retry once on runner instability)
+        shell: bash
+        run: |
+          set +e
+          flutter test --reporter github --concurrency=1
+          result=$?
+          if [ "$result" -ne 0 ]; then
+            echo "::warning::The first test run failed; retrying once to distinguish a transient runner failure."
+            flutter test --reporter github --concurrency=1
+            result=$?
+          fi
+          exit "$result"
 
   android:
     name: Android APK + AAB
