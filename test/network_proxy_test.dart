@@ -69,11 +69,8 @@ void main() {
       NetConfig.providerProxies = {'p1': providerProxy.url};
       Net.reconfigure();
 
-      expect(await Net.text('GET', Uri.parse('http://target.invalid/default'), log: false), 'default');
-      expect(
-        await Net.text('GET', Uri.parse('http://target.invalid/provider'), providerId: 'p1', log: false),
-        'provider',
-      );
+      expect(await Net.text('GET', Uri.parse('http://target.invalid/default')), 'default');
+      expect(await Net.text('GET', Uri.parse('http://target.invalid/provider'), providerId: 'p1'), 'provider');
       expect(defaultProxy.paths, ['/default']);
       expect(providerProxy.paths, ['/provider']);
     });
@@ -98,7 +95,7 @@ void main() {
       NetConfig.proxy = 'http://proxy-user:proxy-pass@127.0.0.1:${server.port}';
       Net.reconfigure();
 
-      expect(await Net.text('GET', Uri.parse('http://target.invalid/auth'), log: false), 'authenticated');
+      expect(await Net.text('GET', Uri.parse('http://target.invalid/auth')), 'authenticated');
       expect(authHeaders, [null, 'Basic ${base64Encode(utf8.encode('proxy-user:proxy-pass'))}']);
     });
   });
@@ -145,7 +142,7 @@ void main() {
       NetConfig.proxy = 'socks5://127.0.0.1:${proxy.port}';
       Net.reconfigure();
 
-      final body = await Net.text('GET', Uri.parse('http://127.0.0.1:${target.port}/hello'), log: false);
+      final body = await Net.text('GET', Uri.parse('http://127.0.0.1:${target.port}/hello'));
       expect(body, 'through-socks');
       expect(requests, ['127.0.0.1:${target.port}']);
     });
@@ -220,7 +217,6 @@ void main() {
         'GET',
         Uri.parse('https://localhost:${target.port}/models'),
         providerId: 'tls-provider',
-        log: false,
       ).timeout(const Duration(seconds: 10));
       expect(body, 'authenticated-https');
       expect(credentials, ['user:p@ss']);

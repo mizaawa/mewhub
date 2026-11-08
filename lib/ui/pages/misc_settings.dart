@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../ai/provider_config.dart';
 import '../../core/i18n.dart';
-import '../../core/log.dart';
 import '../../core/net.dart';
 import '../../data/defaults.dart';
 import '../../data/models_misc.dart';
@@ -13,7 +12,6 @@ import '../../state/notifications.dart';
 import '../../state/settings_store.dart';
 import '../chat/model_picker.dart';
 import '../settings/network_options.dart';
-import '../widgets/code_block.dart';
 import '../widgets/common.dart';
 
 /// Default model assignments for each background task.
@@ -873,84 +871,4 @@ class _ProxyEditorSheetState extends State<_ProxyEditorSheet> {
       ),
     ),
   );
-}
-
-class RequestLogsPage extends StatelessWidget {
-  const RequestLogsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(t('请求日志', 'Request logs')),
-        actions: [IconButton(icon: const Icon(Icons.delete_sweep_outlined), onPressed: AppLog.clear)],
-      ),
-      body: ValueListenableBuilder<int>(
-        valueListenable: AppLog.revision,
-        builder: (context, _, _) {
-          final logs = AppLog.requests;
-          if (logs.isEmpty) {
-            return EmptyState(
-              icon: Icons.receipt_long_outlined,
-              title: t('还没有请求', 'No requests yet'),
-              subtitle: t(
-                '最近 60 条 API 请求会显示在这里（Key 已打码，只保存在内存中）',
-                'The last 60 API requests appear here (keys masked, memory only)',
-              ),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: logs.length,
-            separatorBuilder: (context, i) => const SizedBox(height: 8),
-            itemBuilder: (context, i) {
-              final l = logs[i];
-              final ok = l.error == null && (l.status ?? 0) < 400;
-              final color = l.status == null && l.error == null
-                  ? scheme.primary
-                  : (ok ? const Color(0xFF5E9E6E) : scheme.error);
-              return Card(
-                child: ExpansionTile(
-                  shape: const Border(),
-                  leading: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      l.status?.toString() ?? '…',
-                      style: TextStyle(color: color, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  title: Text(
-                    l.url,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  subtitle: Text(
-                    '${l.method} · ${l.time.toIso8601String().substring(11, 19)}${l.duration == null ? '' : ' · ${l.duration!.inMilliseconds}ms'}${l.error == null ? '' : ' · ${l.error}'}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  children: [
-                    CodeBlock(
-                      code: l.requestHeaders.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
-                      language: 'http',
-                      wrap: true,
-                    ),
-                    if (l.requestBody.isNotEmpty) CodeBlock(code: l.requestBody, language: 'json', wrap: true),
-                    if (l.responseBody.isNotEmpty) CodeBlock(code: l.responseBody, language: 'json', wrap: true),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
 }

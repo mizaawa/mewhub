@@ -60,7 +60,6 @@ class _MewHubAppState extends State<MewHubApp> with WidgetsBindingObserver {
     '/settings/tts': (_) => const TtsSettingsPage(),
     '/settings/network': (_) => const NetworkSettingsPage(),
     '/settings/network/proxies': (_) => const ProxyManagerPage(),
-    '/settings/logs': (_) => const RequestLogsPage(),
     '/settings/mcp': (_) => const McpPage(),
     '/settings/prompts': (_) => const PromptsPage(),
     '/settings/quick': (_) => const QuickMessagesPage(),

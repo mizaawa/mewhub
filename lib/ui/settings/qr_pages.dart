@@ -64,17 +64,18 @@ class _QrScanPageState extends State<QrScanPage> {
             ),
           ),
           IgnorePointer(
-            child: CustomPaint(size: Size.infinite, painter: _ScanOverlay(window)),
+            child: CustomPaint(size: Size.infinite, painter: MewScanOverlay(window)),
           ),
-          IgnorePointer(child: _ScanLine(window: window)),
+          IgnorePointer(child: ScanLine(window: window)),
         ],
       ),
     );
   }
 }
 
-class _ScanOverlay extends CustomPainter {
-  _ScanOverlay(this.window);
+/// Dims everything outside the scan window and outlines it.
+class MewScanOverlay extends CustomPainter {
+  MewScanOverlay(this.window);
   final Rect window;
 
   @override
@@ -95,18 +96,19 @@ class _ScanOverlay extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ScanOverlay old) => old.window != window;
+  bool shouldRepaint(MewScanOverlay old) => old.window != window;
 }
 
-class _ScanLine extends StatefulWidget {
-  const _ScanLine({required this.window});
+/// Sweeping line inside the scan window.
+class ScanLine extends StatefulWidget {
+  const ScanLine({super.key, required this.window});
   final Rect window;
 
   @override
-  State<_ScanLine> createState() => _ScanLineState();
+  State<ScanLine> createState() => _ScanLineState();
 }
 
-class _ScanLineState extends State<_ScanLine> with SingleTickerProviderStateMixin {
+class _ScanLineState extends State<ScanLine> with SingleTickerProviderStateMixin {
   late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat(reverse: true);
 
   @override

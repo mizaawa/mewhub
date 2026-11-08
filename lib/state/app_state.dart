@@ -272,7 +272,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     }
     _sessions.clear();
     if (_chat != null && !sessions.contains(_chat)) _chat!.dispose();
-    mcp.closeAll();
+    unawaited(mcp.closeAll().whenComplete(mcp.dispose));
     super.dispose();
   }
 }

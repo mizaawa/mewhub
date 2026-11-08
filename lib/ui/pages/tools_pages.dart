@@ -21,6 +21,7 @@ import '../../data/settings.dart';
 import '../../state/app_state.dart';
 import '../../state/settings_store.dart';
 import '../chat/model_picker.dart';
+import '../settings/config_transfer_pages.dart';
 import '../export.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
@@ -126,6 +127,15 @@ class _BackupPageState extends State<BackupPage> {
           padding: const EdgeInsets.only(bottom: 40),
           children: [
             SettingsGroup(
+              title: t('扫码传输配置', 'Transfer config by QR'),
+              footer: t(
+                '把供应商、模型、助手、MCP、世界书等配置传到另一台设备。聊天记录请用下面的备份文件。',
+                'Move providers, models, assistants, MCP servers and lorebooks to another device. Use a backup file for chats.',
+              ),
+              children: [_QrTransferCard(includeSecrets: _secrets)],
+            ),
+            SettingsGroup(
+              index: 1,
               title: t('本地', 'Local'),
               footer: s.lastBackupAt == null
                   ? t('还没有备份过', 'Never backed up')
@@ -134,7 +144,7 @@ class _BackupPageState extends State<BackupPage> {
                 SwitchListTile(
                   secondary: const IconBadge(Icons.key_rounded),
                   title: Text(t('包含 API Key 等密钥', 'Include API keys & passwords')),
-                  subtitle: Text(t('关闭后备份文件可以放心分享', 'Turn off to make the file safe to share')),
+                  subtitle: Text(t('同时作用于二维码传输；关闭后可以放心分享', 'Also applies to QR transfer; turn off to share safely')),
                   value: _secrets,
                   onChanged: (v) => setState(() => _secrets = v),
                 ),
@@ -151,7 +161,7 @@ class _BackupPageState extends State<BackupPage> {
               ],
             ),
             SettingsGroup(
-              index: 1,
+              index: 2,
               title: 'WebDAV',
               children: [
                 ListTile(
@@ -222,7 +232,7 @@ class _BackupPageState extends State<BackupPage> {
               ],
             ),
             SettingsGroup(
-              index: 2,
+              index: 3,
               title: t('存储', 'Storage'),
               children: [
                 FutureBuilder<int>(
@@ -257,6 +267,106 @@ class _BackupPageState extends State<BackupPage> {
                   },
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Two side-by-side tiles: show this device's config as QR codes, or scan
+/// another device's codes.
+class _QrTransferCard extends StatelessWidget {
+  const _QrTransferCard({required this.includeSecrets});
+  final bool includeSecrets;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(10),
+    child: Row(
+      children: [
+        Expanded(
+          child: _TransferTile(
+            key: const ValueKey('config-qr-send'),
+            icon: Icons.qr_code_2_rounded,
+            title: t('展示二维码', 'Show QR'),
+            subtitle: includeSecrets ? t('含密钥', 'With keys') : t('不含密钥', 'No keys'),
+            filled: true,
+            onTap: () =>
+                Navigator.of(context)
+                    .push(MaterialPageRoute<void>(builder: (_) => ConfigQrSendPage(includeSecrets: includeSecrets))),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _TransferTile(
+            key: const ValueKey('config-qr-scan'),
+            icon: Icons.qr_code_scanner_rounded,
+            title: t('扫码接收', 'Scan'),
+            subtitle: t('从另一台设备', 'From another device'),
+            onTap: () =>
+                Navigator.of(context).push(MaterialPageRoute<bool>(builder: (_) => const ConfigQrReceivePage())),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _TransferTile extends StatelessWidget {
+  const _TransferTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.filled = false,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final fg = filled ? scheme.onPrimary : scheme.primary;
+    return Pressable(
+      onTap: onTap,
+      scale: 0.96,
+      child: Container(
+        height: 104,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: filled
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [scheme.primary, Color.lerp(scheme.primary, const Color(0xFFE7B98F), 0.45)!],
+                )
+              : null,
+          color: filled ? null : scheme.secondaryContainer.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 28, color: fg),
+            const Spacer(),
+            Text(
+              title,
+              style: tt.titleSmall?.copyWith(color: filled ? Colors.white : null, fontWeight: FontWeight.w700),
+            ),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tt.labelSmall?.copyWith(
+                color: filled ? Colors.white.withValues(alpha: 0.85) : scheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -27,15 +28,15 @@ class McpPage extends StatelessWidget {
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add_rounded),
         label: Text(t('添加服务器', 'Add server')),
-        onPressed: () => _edit(context, McpServerConfig()),
+        onPressed: () => edit(context, McpServerConfig()),
       ),
       body: list.isEmpty
           ? EmptyState(
               icon: Icons.extension_outlined,
               title: t('还没有 MCP 服务器', 'No MCP servers'),
               subtitle: t(
-                '支持远程 Streamable HTTP 与 SSE 传输。添加后在助手的「工具」页里启用。',
-                'Remote Streamable HTTP and SSE transports. Enable per assistant under Tools.',
+                '支持远程 Streamable HTTP 与 SSE 传输。新服务器会自动启用到当前助手，也可以在聊天输入框的 MCP 抽屉里开关。',
+                'Remote Streamable HTTP and SSE transports. New servers are enabled for the current assistant; toggle them from the MCP drawer in chat.',
               ),
             )
           : ListView(
@@ -44,14 +45,15 @@ class McpPage extends StatelessWidget {
                 for (var i = 0; i < list.length; i++)
                   EntranceFx(
                     index: i,
-                    child: _McpTile(cfg: list[i], onEdit: () => _edit(context, list[i])),
+                    child: _McpTile(cfg: list[i], onEdit: () => edit(context, list[i])),
                   ),
               ],
             ),
     );
   }
 
-  static Future<void> _edit(BuildContext context, McpServerConfig cfg) async {
+  /// Add / edit dialog shared with the chat MCP drawer.
+  static Future<void> edit(BuildContext context, McpServerConfig cfg) async {
     final store = context.read<SettingsStore>();
     final name = TextEditingController(text: cfg.name);
     final url = TextEditingController(text: cfg.url);
@@ -117,14 +119,28 @@ class McpPage extends StatelessWidget {
           final i = line.indexOf(':');
           if (i > 0) h[line.substring(0, i).trim()] = line.substring(i + 1).trim();
         }
-        store.upsertMcp(
-          cfg.copyWith(
-            name: name.text.trim().isEmpty ? (u.host) : name.text.trim(),
-            url: url.text.trim(),
-            transport: transport,
-            headers: h,
-          ),
+        final isNew = !store.value.mcpServers.any((m) => m.id == cfg.id);
+        final saved = cfg.copyWith(
+          name: name.text.trim().isEmpty ? (u.host) : name.text.trim(),
+          url: url.text.trim(),
+          transport: transport,
+          headers: h,
         );
+        store.upsertMcp(saved);
+        // A new server is useless until an assistant uses it: link it to the
+        // current one right away, then connect in the background.
+        if (isNew) {
+          final a = store.value.currentAssistant;
+          store.upsertAssistant(a.copyWith(mcpServerIds: {...a.mcpServerIds, saved.id}));
+        }
+        if (context.mounted && saved.enabled) {
+          final mcp = context.read<AppState>().mcp;
+          unawaited(() async {
+            try {
+              await mcp.ensure(saved);
+            } catch (_) {}
+          }());
+        }
       }
     }
     name.dispose();
@@ -154,7 +170,7 @@ class _McpTileState extends State<_McpTile> {
       await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
-        builder: (ctx) => _McpToolsSheet(cfg: widget.cfg, tools: c.tools, server: c.serverName),
+        builder: (ctx) => McpToolsSheet(cfg: widget.cfg, tools: c.tools, server: c.serverName),
       );
     } catch (e) {
       if (mounted) toast(context, t('连接失败：$e', 'Connection failed: $e'), error: true);
@@ -166,7 +182,12 @@ class _McpTileState extends State<_McpTile> {
   @override
   Widget build(BuildContext context) {
     final store = context.read<SettingsStore>();
-    final client = context.read<AppState>().mcp.client(widget.cfg.id);
+    final mcp = context.read<AppState>().mcp;
+    return ListenableBuilder(listenable: mcp, builder: (context, _) => _tile(context, store, mcp));
+  }
+
+  Widget _tile(BuildContext context, SettingsStore store, McpManager mcp) {
+    final client = mcp.client(widget.cfg.id);
     final status = client?.status ?? McpStatus.idle;
     final scheme = Theme.of(context).colorScheme;
     final dot = switch (status) {
@@ -174,6 +195,13 @@ class _McpTileState extends State<_McpTile> {
       McpStatus.error => scheme.error,
       McpStatus.connecting => scheme.primary,
       McpStatus.idle => scheme.outline,
+    };
+    final used = store.value.assistants.where((a) => a.mcpServerIds.contains(widget.cfg.id)).length;
+    final detail = switch (status) {
+      McpStatus.connected => '${client!.tools.length} tools',
+      McpStatus.connecting => t('连接中…', 'Connecting…'),
+      McpStatus.error => client?.error ?? t('连接失败', 'Connection failed'),
+      McpStatus.idle => t('$used 个助手使用', 'Used by $used'),
     };
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
@@ -196,8 +224,10 @@ class _McpTileState extends State<_McpTile> {
           ),
           title: Text(widget.cfg.name.isEmpty ? widget.cfg.url : widget.cfg.name),
           subtitle: Text(
-            '${widget.cfg.transport == McpTransport.sse ? 'SSE' : 'HTTP'} · ${client?.tools.length ?? '-'} tools',
-            maxLines: 1,
+            '${widget.cfg.transport == McpTransport.sse ? 'SSE' : 'HTTP'} · $detail',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: status == McpStatus.error ? TextStyle(color: scheme.error) : null,
           ),
           onTap: widget.onEdit,
           trailing: Row(
@@ -212,13 +242,24 @@ class _McpTileState extends State<_McpTile> {
               ),
               Switch(
                 value: widget.cfg.enabled,
-                onChanged: (v) => store.upsertMcp(widget.cfg.copyWith(enabled: v)),
+                onChanged: (v) {
+                  store.upsertMcp(widget.cfg.copyWith(enabled: v));
+                  if (!v) unawaited(mcp.disconnect(widget.cfg.id));
+                },
               ),
             ],
           ),
           onLongPress: () async {
             if (await confirm(context, t('删除这个服务器？', 'Delete this server?'), destructive: true)) {
-              store.update((s) => s.copyWith(mcpServers: s.mcpServers.where((e) => e.id != widget.cfg.id).toList()));
+              store.update(
+                (s) => s.copyWith(
+                  mcpServers: s.mcpServers.where((e) => e.id != widget.cfg.id).toList(),
+                  assistants: [
+                    for (final a in s.assistants) a.copyWith(mcpServerIds: {...a.mcpServerIds}..remove(widget.cfg.id)),
+                  ],
+                ),
+              );
+              unawaited(mcp.disconnect(widget.cfg.id));
             }
           },
         ),
@@ -227,8 +268,8 @@ class _McpTileState extends State<_McpTile> {
   }
 }
 
-class _McpToolsSheet extends StatelessWidget {
-  const _McpToolsSheet({required this.cfg, required this.tools, required this.server});
+class McpToolsSheet extends StatelessWidget {
+  const McpToolsSheet({super.key, required this.cfg, required this.tools, required this.server});
   final McpServerConfig cfg;
   final List<McpTool> tools;
   final String server;
@@ -347,7 +388,10 @@ class PromptsPage extends StatelessWidget {
         children: [
           SettingsGroup(
             title: t('模式', 'Modes'),
-            footer: t('在聊天输入框的「+」面板中开关，或在助手中设为常开', 'Toggle in the composer "+" panel or make always-on per assistant'),
+            footer: t(
+              '在聊天输入框「+」→ 扩展 中开关，或在助手中设为常开',
+              'Toggle from the composer "+" → Extensions, or make always-on per assistant',
+            ),
             children: [
               for (final m in s.modes)
                 ListTile(
@@ -613,7 +657,10 @@ class QuickMessagesPage extends StatelessWidget {
           ? EmptyState(
               icon: Icons.short_text_rounded,
               title: t('还没有快捷短语', 'No quick messages'),
-              subtitle: t('常用的提问可以保存在这里，在输入框「+」中一键填入', 'Save frequent prompts and insert them from the composer "+"'),
+              subtitle: t(
+                '常用的提问可以保存在这里，在输入框「+」→ 扩展 中一键填入',
+                'Save frequent prompts and insert them from the composer "+" → Extensions',
+              ),
             )
           : ListView(
               padding: const EdgeInsets.fromLTRB(0, 8, 0, 100),

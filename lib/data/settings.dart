@@ -424,7 +424,7 @@ class AppSettings {
   factory AppSettings.fromJson(Map<String, dynamic> j) {
     final assistants = mapList(j['assistants'], Assistant.fromJson);
     final loadedAssistants = assistants.isEmpty ? defaultAssistants() : assistants;
-    final list = [
+    var list = [
       for (final assistant in loadedAssistants)
         if (assistant.id == defaultAssistantId)
           assistant.copyWith(
@@ -435,6 +435,9 @@ class AppSettings {
           assistant,
     ];
     final cur = asStr(j['currentAssistantId']);
+    final currentId = list.any((a) => a.id == cur) ? cur : list.first.id;
+    final mcpServers = mapList(j['mcpServers'], McpServerConfig.fromJson);
+    if (j[_mcpLinkedKey] != true) list = linkOrphanMcpServers(list, mcpServers, currentId);
     return AppSettings(
       themeMode: enumByName(ThemeModePref.values, j['themeMode'], ThemeModePref.system),
       language: enumByName(AppLang.values, j['language'], AppLang.system),
@@ -443,7 +446,7 @@ class AppSettings {
         j['providers'] == null ? defaultProviders() : mapList(j['providers'], ProviderConfig.fromJson),
       ),
       assistants: list,
-      currentAssistantId: list.any((a) => a.id == cur) ? cur : list.first.id,
+      currentAssistantId: currentId,
       chatModelId: asStrOrNull(j['chatModelId']),
       titleModelId: asStrOrNull(j['titleModelId']),
       translateModelId: asStrOrNull(j['translateModelId']),
@@ -467,7 +470,7 @@ class AppSettings {
           ? [SearchServiceConfig(type: SearchServiceType.bing)]
           : mapList(j['searchServices'], SearchServiceConfig.fromJson),
       searchServiceIndex: asInt(j['searchServiceIndex']),
-      mcpServers: mapList(j['mcpServers'], McpServerConfig.fromJson),
+      mcpServers: mcpServers,
       lorebooks: mapList(j['lorebooks'], Lorebook.fromJson),
       modes: j['modes'] == null ? defaultModes() : mapList(j['modes'], ModeInjection.fromJson),
       quickMessages: mapList(j['quickMessages'], QuickMessage.fromJson),
@@ -521,6 +524,7 @@ class AppSettings {
     'searchServices': searchServices.map((e) => withSecrets ? e.toJson() : e.copyWith(apiKey: '').toJson()).toList(),
     'searchServiceIndex': searchServiceIndex,
     'mcpServers': mcpServers.map((e) => withSecrets ? e.toJson() : e.copyWith(headers: const {}).toJson()).toList(),
+    _mcpLinkedKey: true,
     'lorebooks': lorebooks.map((e) => e.toJson()).toList(),
     'modes': modes.map((e) => e.toJson()).toList(),
     'quickMessages': quickMessages.map((e) => e.toJson()).toList(),
@@ -543,3 +547,21 @@ class AppSettings {
 }
 
 const _keep = Object();
+
+/// Written by 1.5.0+. Older settings get [linkOrphanMcpServers] applied once.
+const _mcpLinkedKey = 'mcpLinked';
+
+/// Before 1.5.0 an MCP server reached the model only after it was also ticked
+/// on an assistant, so a server that was enabled and connected could still be
+/// invisible to every chat. Attach such servers to the current assistant.
+List<Assistant> linkOrphanMcpServers(List<Assistant> assistants, List<McpServerConfig> servers, String currentId) {
+  final used = {for (final a in assistants) ...a.mcpServerIds};
+  final orphans = [
+    for (final s in servers)
+      if (s.enabled && !used.contains(s.id)) s.id,
+  ];
+  if (orphans.isEmpty) return assistants;
+  return [
+    for (final a in assistants) a.id == currentId ? a.copyWith(mcpServerIds: {...a.mcpServerIds, ...orphans}) : a,
+  ];
+}

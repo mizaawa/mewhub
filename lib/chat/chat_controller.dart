@@ -217,38 +217,65 @@ class ChatController extends ChangeNotifier {
       if (a.enableWebSearch && !_useBuiltInSearch(model)) ...buildSearchTools(s),
       if (a.enableMemory) ...buildMemoryTools(db, assistantId: a.useGlobalMemory ? null : a.id),
     ];
-    for (final id in a.mcpServerIds) {
-      final cfg = s.mcpServers.where((m) => m.id == id && m.enabled).firstOrNull;
-      if (cfg == null) continue;
-      try {
-        final client = await mcp.ensure(cfg);
-        for (final t in client.tools) {
-          if (cfg.disabledTools.contains(t.name)) continue;
-          tools.add(
-            AppTool(
-              name: _mcpToolName(cfg.name, t.name),
-              displayName: '${cfg.name} · ${t.name}',
-              description: t.description,
-              parameters: t.inputSchema,
-              needsApproval: true,
-              execute: (args) async {
-                final r = await client.callTool(t.name, args);
-                return r.isError ? jsonEncode({'error': r.text}) : r.text;
-              },
-            ),
-          );
-        }
-      } catch (e) {
-        debugPrint('MCP ${cfg.name} unavailable: $e');
+    final servers = [
+      for (final m in s.mcpServers)
+        if (m.enabled && a.mcpServerIds.contains(m.id)) m,
+    ];
+    // Connect in parallel so one slow server cannot hold up the reply for long.
+    final clients = await Future.wait([
+      for (final cfg in servers)
+        mcp.ensure(cfg).then<McpClient?>((c) => c).timeout(const Duration(seconds: 20)).catchError((Object e) {
+          debugPrint('MCP ${cfg.name} unavailable: $e');
+          return null;
+        }),
+    ]);
+    final names = {for (final t in tools) t.name};
+    for (var i = 0; i < servers.length; i++) {
+      final cfg = servers[i];
+      final client = clients[i];
+      if (client == null) continue;
+      for (final t in client.tools) {
+        if (cfg.disabledTools.contains(t.name)) continue;
+        final name = uniqueToolName(mcpToolName(cfg.name, t.name), names);
+        names.add(name);
+        tools.add(
+          AppTool(
+            name: name,
+            displayName: '${cfg.name} · ${t.name}',
+            description: t.description.trim().isEmpty ? 'Tool "${t.name}" from MCP server ${cfg.name}' : t.description,
+            parameters: normalizeToolSchema(t.inputSchema),
+            needsApproval: true,
+            execute: (args) async {
+              // Resolve the live client: the server may have reconnected since.
+              final current = settings.mcpServers.where((m) => m.id == cfg.id).firstOrNull ?? cfg;
+              final live = await mcp.ensure(current);
+              final r = await live.callTool(t.name, args);
+              return r.isError ? jsonEncode({'error': r.text}) : r.text;
+            },
+          ),
+        );
       }
     }
     return tools;
   }
 
-  static String _mcpToolName(String server, String tool) {
+  /// `mcp__<server>__<tool>`, restricted to the characters every provider accepts.
+  @visibleForTesting
+  static String mcpToolName(String server, String tool) {
     final s = server.toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]+'), '_');
     final n = 'mcp__${s}__$tool'.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
     return n.length > 64 ? n.substring(0, 64) : n;
+  }
+
+  /// Providers reject duplicate function names; long names can collide after truncation.
+  @visibleForTesting
+  static String uniqueToolName(String name, Set<String> taken) {
+    if (!taken.contains(name)) return name;
+    for (var i = 2; ; i++) {
+      final suffix = '_$i';
+      final base = name.length + suffix.length > 64 ? name.substring(0, 64 - suffix.length) : name;
+      if (!taken.contains('$base$suffix')) return '$base$suffix';
+    }
   }
 
   bool _useBuiltInSearch(ModelConfig model) =>
@@ -319,7 +346,7 @@ class ChatController extends ChangeNotifier {
     final tools = model.tools ? await _collectTools(model) : <AppTool>[];
     final toolMap = {for (final t in tools) t.name: t};
     final memories = a.enableMemory
-        ? (a.useGlobalMemory ? await db.memories(global: true) : await db.memories(assistantId: a.id))
+        ? await memoriesForPrompt(db, assistantId: a.useGlobalMemory ? null : a.id)
         : <MemoryItem>[];
     final recent = a.enableRecentChats
         ? (await db.recent(a.id, excludeId: _conv.id, limit: 8)).map((e) => e.title).where((e) => e.isNotEmpty).toList()

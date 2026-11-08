@@ -161,7 +161,6 @@ class SettingsPage extends StatelessWidget {
                   nav(Icons.cloud_sync_outlined, t('备份与恢复', 'Backup & restore'), '/settings/backup'),
                   nav(Icons.insights_outlined, t('用量统计', 'Usage stats'), '/settings/stats'),
                   nav(Icons.wifi_tethering_rounded, t('网络', 'Network'), '/settings/network'),
-                  nav(Icons.receipt_long_outlined, t('请求日志', 'Request logs'), '/settings/logs'),
                 ],
               ),
               SettingsGroup(

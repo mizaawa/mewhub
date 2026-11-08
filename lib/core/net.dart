@@ -7,7 +7,6 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
 import '../data/proxy_config.dart';
-import 'log.dart';
 
 class ApiException implements Exception {
   ApiException(this.message, {this.status, this.body, this.cause, this.retryAfter});
@@ -139,13 +138,9 @@ class Net {
 
   static Future<http.StreamedResponse> sendRequest(
     http.BaseRequest req, {
-    bool log = true,
-    String body = '',
     String? providerId,
     Duration? timeout,
   }) async {
-    final start = DateTime.now();
-    final entry = log ? AppLog.begin(req.method, req.url, req.headers, body) : null;
     final limit = timeout ?? NetConfig.responseTimeout;
     final abort = CancelToken();
     final callerAbort = req is http.Abortable ? req.abortTrigger : null;
@@ -172,7 +167,6 @@ class Net {
           sink.close();
         },
       );
-      entry?.status = res.statusCode;
       if (res.statusCode < 200 || res.statusCode >= 300) {
         var text = '';
         try {
@@ -184,10 +178,6 @@ class Net {
           // breaks. In particular, a 401 must not become a retryable timeout.
           abort.cancel();
         }
-        if (entry != null) {
-          AppLog.appendResponse(entry, text);
-          AppLog.end(entry, status: res.statusCode, error: 'HTTP ${res.statusCode}', start: start);
-        }
         throw ApiException(
           extractErrorMessage(text, res.reasonPhrase),
           status: res.statusCode,
@@ -195,26 +185,8 @@ class Net {
           retryAfter: parseRetryAfter(res.headers['retry-after']),
         );
       }
-      final tee = entry == null
-          ? stream
-          : stream.transform(
-              StreamTransformer<List<int>, List<int>>.fromHandlers(
-                handleData: (d, sink) {
-                  AppLog.appendResponse(entry, utf8.decode(d, allowMalformed: true));
-                  sink.add(d);
-                },
-                handleError: (e, st, sink) {
-                  AppLog.end(entry, error: e.toString(), start: start);
-                  sink.addError(e, st);
-                },
-                handleDone: (sink) {
-                  AppLog.end(entry, start: start);
-                  sink.close();
-                },
-              ),
-            );
       return http.StreamedResponse(
-        tee,
+        stream,
         res.statusCode,
         headers: res.headers,
         reasonPhrase: res.reasonPhrase,
@@ -224,12 +196,10 @@ class Net {
         persistentConnection: res.persistentConnection,
       );
     } on http.RequestAbortedException {
-      if (entry != null) AppLog.end(entry, error: 'cancelled', start: start);
       rethrow;
     } on ApiException {
       rethrow;
     } catch (e) {
-      if (entry != null) AppLog.end(entry, error: e.toString(), start: start);
       throw ApiException(e.toString(), cause: e);
     }
   }
@@ -241,16 +211,15 @@ class Net {
     Map<String, String> headers = const {},
     String? body,
     CancelToken? cancel,
-    bool log = true,
     String? providerId,
     Duration? timeout,
   }) {
     final req = http.AbortableRequest(method, url, abortTrigger: cancel?.future)..headers.addAll(_withUa(headers));
     if (body != null) req.bodyBytes = utf8.encode(body);
-    return sendRequest(req, log: log, body: body ?? '', providerId: providerId, timeout: timeout);
+    return sendRequest(req, providerId: providerId, timeout: timeout);
   }
 
-  /// Sends a raw binary body (uploads). Not logged.
+  /// Sends a raw binary body (uploads).
   static Future<http.StreamedResponse> sendBytes(
     String method,
     Uri url,
@@ -261,7 +230,7 @@ class Net {
     final req = http.AbortableRequest(method, url)
       ..headers.addAll(_withUa(headers))
       ..bodyBytes = bytes;
-    return sendRequest(req, log: false, providerId: providerId);
+    return sendRequest(req, providerId: providerId);
   }
 
   static Future<String> text(
@@ -271,7 +240,6 @@ class Net {
     String? body,
     CancelToken? cancel,
     Duration? timeout,
-    bool log = true,
     String? providerId,
   }) async {
     final res = await send(
@@ -280,7 +248,6 @@ class Net {
       headers: headers,
       body: body,
       cancel: cancel,
-      log: log,
       providerId: providerId,
       timeout: timeout,
     );
@@ -294,7 +261,6 @@ class Net {
     Object? body,
     CancelToken? cancel,
     Duration? timeout,
-    bool log = true,
     String? providerId,
   }) async {
     final s = await text(
@@ -304,7 +270,6 @@ class Net {
       body: body == null ? null : (body is String ? body : jsonEncode(body)),
       cancel: cancel,
       timeout: timeout,
-      log: log,
       providerId: providerId,
     );
     if (s.trim().isEmpty) return null;
@@ -317,7 +282,7 @@ class Net {
     CancelToken? cancel,
     String? providerId,
   }) async {
-    final res = await send('GET', url, headers: headers, cancel: cancel, log: false, providerId: providerId);
+    final res = await send('GET', url, headers: headers, cancel: cancel, providerId: providerId);
     final out = <int>[];
     await for (final c in res.stream) {
       out.addAll(c);

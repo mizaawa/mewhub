@@ -246,7 +246,7 @@ void main() {
       Net.reconfigure();
       try {
         await expectLater(
-          Net.send('GET', Uri.parse('http://127.0.0.1:${server.port}/stalled'), log: false),
+          Net.send('GET', Uri.parse('http://127.0.0.1:${server.port}/stalled')),
           throwsA(isA<ApiException>().having((error) => error.cause, 'timeout cause', isA<TimeoutException>())),
         );
         await received.future;
@@ -273,7 +273,7 @@ void main() {
       NetConfig.responseTimeout = const Duration(milliseconds: 100);
       Net.reconfigure();
       try {
-        final response = await Net.send('GET', Uri.parse('http://127.0.0.1:${server.port}/stalled-body'), log: false);
+        final response = await Net.send('GET', Uri.parse('http://127.0.0.1:${server.port}/stalled-body'));
         await received.future;
         await expectLater(response.stream.bytesToString(), throwsA(isA<TimeoutException>()));
       } finally {
@@ -299,7 +299,6 @@ void main() {
             'GET',
             Uri.parse('http://127.0.0.1:${server.port}/unauthorized'),
             timeout: const Duration(milliseconds: 150),
-            log: false,
           ),
           throwsA(
             isA<ApiException>()
@@ -333,7 +332,6 @@ void main() {
             'GET',
             Uri.parse('http://127.0.0.1:${server.port}/active'),
             timeout: const Duration(milliseconds: 400),
-            log: false,
           ),
           '012345',
         );

@@ -224,7 +224,7 @@ class WebDavClient {
 
   Future<void> ensureDir() async {
     try {
-      await Net.text('MKCOL', _uri(), headers: _auth, log: false);
+      await Net.text('MKCOL', _uri(), headers: _auth);
     } on ApiException catch (e) {
       // 405 = already exists; some servers answer 301 for the trailing slash.
       if (e.status != 405 && e.status != 301) rethrow;
@@ -239,7 +239,7 @@ class WebDavClient {
 
   Future<Uint8List> download(String href) async => Uint8List.fromList(await Net.bytes(_resolve(href), headers: _auth));
 
-  Future<void> delete(String href) => Net.text('DELETE', _resolve(href), headers: _auth, log: false);
+  Future<void> delete(String href) => Net.text('DELETE', _resolve(href), headers: _auth);
 
   static const _propfind =
       '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop>'
@@ -251,7 +251,6 @@ class WebDavClient {
       _uri(),
       headers: {..._auth, 'Depth': '1', 'Content-Type': 'application/xml'},
       body: _propfind,
-      log: false,
     );
     final out = <WebDavFile>[];
     final responses = RegExp(

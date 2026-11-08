@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -24,6 +23,8 @@ import '../widgets/common.dart';
 import '../widgets/motion.dart';
 import 'chat_drawer.dart';
 import 'chat_navigation.dart';
+import 'chat_quick_sheets.dart';
+import 'chat_usage_sheet.dart';
 import 'composer.dart';
 import 'message_bubble.dart';
 import 'model_picker.dart';
@@ -423,12 +424,14 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     final s = store.value;
     final wide = MediaQuery.sizeOf(context).width >= 900;
     return ListenableBuilder(
-      listenable: c,
+      listenable: Listenable.merge([c, app.mcp]),
       builder: (context, _) {
         final conv = c.conversation;
         final a = c.assistant;
         final resolved = c.resolvedModel;
         final model = resolved?.model;
+        final mcpOverview = McpOverview.of(s, a, app.mcp);
+        final extensions = ExtensionsOverview.of(s, a, c.modeIds);
         final bg = a.background;
         final body = Stack(
           children: [
@@ -537,10 +540,15 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
                   ),
                   supportsReasoning: model?.reasoning ?? false,
                   supportsVision: model?.vision ?? true,
-                  activeModes: {...a.modeIds, ...c.modeIds},
-                  onToggleMode: c.toggleMode,
-                  onQuickMessage: (v) => _composer.currentState?.setText(v),
                   onCompress: () => _compress(c),
+                  mcpLabel: mcpOverview.compact,
+                  mcpDot: mcpOverview.dot(Theme.of(context).colorScheme),
+                  mcpActive: mcpOverview.active > 0,
+                  onOpenMcp: () => showMcpQuickSheet(context, c),
+                  extensionsLabel: extensions.compact,
+                  extensionsActive: extensions.activeCount,
+                  onOpenExtensions: () =>
+                      showExtensionsQuickSheet(context, c, onQuickMessage: (v) => _composer.currentState?.setText(v)),
                 ),
               ],
             ),
@@ -627,10 +635,6 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
               value: 'export_md',
               child: _MenuRow(Icons.description_outlined, t('导出 Markdown', 'Export Markdown')),
             ),
-            PopupMenuItem(
-              value: 'export_json',
-              child: _MenuRow(Icons.data_object_rounded, t('导出 JSON', 'Export JSON')),
-            ),
             PopupMenuItem(value: 'usage', child: _MenuRow(Icons.data_usage_rounded, t('用量统计', 'Token usage'))),
             PopupMenuItem(
               value: 'delete',
@@ -658,21 +662,9 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
         if (p != null) await c.setCustomSystemPrompt(p);
       case 'export_md':
         await shareText(ConversationExport.markdown(conv), '${ConversationExport.fileName(conv)}.md');
-      case 'export_json':
-        await shareText(jsonEncode(conv.toJson()), '${ConversationExport.fileName(conv)}.json');
       case 'usage':
-        final u = conv.totalUsage;
         if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(t('本对话用量', 'Chat usage')),
-            content: Text(
-              '${t('输入', 'Input')}: ${u.input}\n${t('输出', 'Output')}: ${u.output}\n${t('缓存命中', 'Cached')}: ${u.cached}\n${t('合计', 'Total')}: ${u.total}',
-            ),
-            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('好', 'OK')))],
-          ),
-        );
+        await showChatUsageSheet(context, conv, contextLength: c.resolvedModel?.model.contextLength);
       case 'delete':
         if (conv.nodes.isEmpty) return;
         if (await confirm(context, t('删除这个对话？', 'Delete this chat?'), destructive: true)) {

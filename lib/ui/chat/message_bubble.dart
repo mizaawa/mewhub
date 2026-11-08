@@ -273,26 +273,44 @@ class MessageBubble extends StatelessWidget {
 
   Widget _assistantHeader(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final name = display.showModelName ? (m.modelName ?? assistant.name) : assistant.name;
+    final tt = Theme.of(context).textTheme;
+    final name = assistant.name.trim().isEmpty ? 'MewBot' : assistant.name.trim();
+    final model = m.modelName?.trim() ?? '';
+    final showModel = display.showModelName && model.isNotEmpty && model != name;
+    final time = display.showTimestamps ? formatTime(m.createdAt) : '';
+    final sub = [if (showModel) model, if (time.isNotEmpty) time].join(' · ');
     return Row(
+      key: const ValueKey('assistant-header'),
       children: [
-        AvatarView(value: assistant.avatar, fallback: m.modelName ?? assistant.name, size: 28),
-        const SizedBox(width: 8),
+        AvatarView(value: assistant.avatar, fallback: model.isEmpty ? name : model, size: sub.isEmpty ? 28 : 34),
+        const SizedBox(width: 9),
         Flexible(
-          child: Text(
-            name.isEmpty ? 'MewBot' : name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tt.labelLarge?.copyWith(fontWeight: FontWeight.w700, height: 1.2),
+              ),
+              if (sub.isNotEmpty)
+                Text(
+                  sub,
+                  key: const ValueKey('assistant-header-model'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tt.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+                    fontSize: 11,
+                    height: 1.25,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+            ],
           ),
         ),
-        if (display.showTimestamps) ...[
-          const SizedBox(width: 8),
-          Text(
-            formatTime(m.createdAt),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-        ],
       ],
     );
   }

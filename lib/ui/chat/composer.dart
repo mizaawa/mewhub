@@ -32,11 +32,15 @@ class Composer extends StatefulWidget {
     required this.onReasoning,
     required this.supportsReasoning,
     required this.supportsVision,
-    required this.activeModes,
-    required this.onToggleMode,
-    required this.onQuickMessage,
     required this.onCompress,
     this.controller,
+    this.mcpLabel,
+    this.mcpDot,
+    this.mcpActive = false,
+    this.onOpenMcp,
+    this.extensionsLabel,
+    this.extensionsActive = 0,
+    this.onOpenExtensions,
   });
 
   final AppSettings settings;
@@ -52,11 +56,19 @@ class Composer extends StatefulWidget {
   final ValueChanged<ReasoningLevel> onReasoning;
   final bool supportsReasoning;
   final bool supportsVision;
-  final Set<String> activeModes;
-  final ValueChanged<String> onToggleMode;
-  final ValueChanged<String> onQuickMessage;
   final VoidCallback onCompress;
   final TextEditingController? controller;
+
+  /// Summary for the MCP entry ("2 on · 67 tools"). Null hides the entry.
+  final String? mcpLabel;
+  final Color? mcpDot;
+  final bool mcpActive;
+  final VoidCallback? onOpenMcp;
+
+  /// Summary for the extensions entry. Null hides the entry.
+  final String? extensionsLabel;
+  final int extensionsActive;
+  final VoidCallback? onOpenExtensions;
 
   @override
   State<Composer> createState() => ComposerState();
@@ -486,72 +498,89 @@ class ComposerState extends State<Composer> {
     );
   }
 
+  /// Collapses the panel, then opens one of the chat drawers.
+  void _openDrawer(VoidCallback open) {
+    _focus.unfocus();
+    setState(() => _toolsOpen = false);
+    open();
+  }
+
+  /// "+" panel: two drawer entries with live summaries above one row of
+  /// compact actions, about the height of the old single tile row.
   Widget _toolsPanel(BuildContext context) {
-    final s = widget.settings;
-    final tiles = <Widget>[
-      _ToolTile(
+    final scheme = Theme.of(context).colorScheme;
+    final entries = <Widget>[
+      if (widget.onOpenMcp != null)
+        _EntryCard(
+          key: const ValueKey('composer-mcp-entry'),
+          icon: Icons.extension_rounded,
+          title: 'MCP',
+          subtitle: widget.mcpLabel ?? '',
+          active: widget.mcpActive,
+          dot: widget.mcpDot,
+          onTap: () => _openDrawer(widget.onOpenMcp!),
+        ),
+      if (widget.onOpenExtensions != null)
+        _EntryCard(
+          key: const ValueKey('composer-extensions-entry'),
+          icon: Icons.auto_awesome_mosaic_outlined,
+          title: t('扩展', 'Extensions'),
+          subtitle: widget.extensionsLabel ?? '',
+          active: widget.extensionsActive > 0,
+          count: widget.extensionsActive,
+          onTap: () => _openDrawer(widget.onOpenExtensions!),
+        ),
+    ];
+    final actions = <Widget>[
+      _ActionPill(
+        key: const ValueKey('composer-action-photos'),
         icon: Icons.photo_library_outlined,
         label: t('相册', 'Photos'),
         enabled: widget.supportsVision,
         onTap: _pickPhotosAndEdit,
       ),
-      _ToolTile(
+      _ActionPill(
+        key: const ValueKey('composer-action-camera'),
         icon: Icons.photo_camera_outlined,
         label: t('拍照', 'Camera'),
         enabled: widget.supportsVision,
         onTap: _takePhotoAndEdit,
       ),
-      _ToolTile(icon: Icons.attach_file_rounded, label: t('文件', 'Files'), onTap: () => _pick(Attachments.pickFiles)),
-      _ToolTile(icon: Icons.compress_rounded, label: t('压缩上下文', 'Compress'), onTap: widget.onCompress),
+      _ActionPill(
+        key: const ValueKey('composer-action-files'),
+        icon: Icons.attach_file_rounded,
+        label: t('文件', 'Files'),
+        onTap: () => _pick(Attachments.pickFiles),
+      ),
+      _ActionPill(
+        key: const ValueKey('composer-action-compress'),
+        icon: Icons.compress_rounded,
+        label: t('压缩', 'Compress'),
+        onTap: widget.onCompress,
+      ),
+    ];
+    List<Widget> spaced(List<Widget> items, double gap, int offset) => [
+      for (var i = 0; i < items.length; i++) ...[
+        if (i > 0) SizedBox(width: gap),
+        Expanded(
+          child: EntranceFx(index: offset + i, dy: 8, child: items[i]),
+        ),
+      ],
     ];
     return Container(
+      key: const ValueKey('composer-tools-panel'),
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        color: scheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              for (var i = 0; i < tiles.length; i++)
-                Expanded(
-                  child: EntranceFx(index: i, child: tiles[i]),
-                ),
-            ],
-          ),
-          if (s.modes.isNotEmpty || s.quickMessages.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final m in s.modes)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: FilterChip(
-                        label: Text(m.name),
-                        selected: widget.activeModes.contains(m.id),
-                        onSelected: (_) => widget.onToggleMode(m.id),
-                      ),
-                    ),
-                  for (final q in s.quickMessages)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ActionChip(
-                        avatar: const Icon(Icons.short_text_rounded, size: 16),
-                        label: Text(q.title.isEmpty ? q.content : q.title, overflow: TextOverflow.ellipsis),
-                        onPressed: () => widget.onQuickMessage(q.content),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
+          if (entries.isNotEmpty) ...[Row(children: spaced(entries, 8, 0)), const SizedBox(height: 8)],
+          Row(children: spaced(actions, 6, entries.length)),
         ],
       ),
     );
@@ -892,8 +921,125 @@ class _SendButton extends StatelessWidget {
   }
 }
 
-class _ToolTile extends StatelessWidget {
-  const _ToolTile({required this.icon, required this.label, required this.onTap, this.enabled = true});
+/// One of the two drawer entries at the top of the "+" panel.
+class _EntryCard extends StatelessWidget {
+  const _EntryCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.active = false,
+    this.dot,
+    this.count = 0,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool active;
+  final Color? dot;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Pressable(
+      onTap: onTap,
+      scale: 0.97,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+        height: 54,
+        padding: const EdgeInsets.fromLTRB(8, 7, 6, 7),
+        decoration: BoxDecoration(
+          color: active ? scheme.primary.withValues(alpha: 0.10) : scheme.secondaryContainer.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: active ? scheme.primary.withValues(alpha: 0.32) : Colors.transparent),
+        ),
+        child: Row(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: active ? scheme.primary : scheme.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(icon, size: 19, color: active ? scheme.onPrimary : scheme.primary),
+                ),
+                if (dot != null)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: dot,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: scheme.surfaceContainerLowest, width: 1.6),
+                      ),
+                    ),
+                  )
+                else if (count > 0)
+                  Positioned(
+                    right: -5,
+                    top: -5,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 16),
+                      height: 16,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: scheme.primary,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: scheme.surfaceContainerLowest, width: 1.4),
+                      ),
+                      child: Text(
+                        '$count',
+                        style: tt.labelSmall?.copyWith(color: scheme.onPrimary, fontSize: 9.5, height: 1),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tt.labelLarge?.copyWith(fontWeight: FontWeight.w700, height: 1.15),
+                  ),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tt.labelSmall?.copyWith(color: scheme.onSurfaceVariant, height: 1.25),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact icon-over-label action used for photos, camera, files and compress.
+class _ActionPill extends StatelessWidget {
+  const _ActionPill({super.key, required this.icon, required this.label, required this.onTap, this.enabled = true});
   final IconData icon;
   final String label;
   final VoidCallback onTap;
@@ -906,18 +1052,23 @@ class _ToolTile extends StatelessWidget {
       opacity: enabled ? 1 : 0.4,
       child: Pressable(
         onTap: enabled ? onTap : null,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(17)),
-              child: Icon(icon, color: scheme.primary),
-            ),
-            const SizedBox(height: 6),
-            Text(label, style: Theme.of(context).textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ],
+        scale: 0.94,
+        child: Container(
+          height: 50,
+          decoration: BoxDecoration(color: scheme.surfaceContainerHigh, borderRadius: BorderRadius.circular(14)),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 19, color: scheme.primary),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(height: 1.1),
+              ),
+            ],
+          ),
         ),
       ),
     );

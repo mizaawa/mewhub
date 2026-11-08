@@ -19,9 +19,6 @@ Widget _composer({required Future<void> Function(String) onSend}) => Composer(
   onReasoning: (_) {},
   supportsReasoning: true,
   supportsVision: true,
-  activeModes: const {},
-  onToggleMode: (_) {},
-  onQuickMessage: (_) {},
   onCompress: () {},
 );
 

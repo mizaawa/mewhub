@@ -34,3 +34,15 @@ Map<String, dynamic> strProp(String description, {List<String>? enumValues}) => 
 };
 
 Map<String, dynamic> intProp(String description) => {'type': 'integer', 'description': description};
+
+/// Makes a third-party (MCP) input schema acceptable to every provider:
+/// the root must be an object schema with a `properties` map. `$schema`
+/// is dropped because some OpenAI-compatible gateways reject it.
+Map<String, dynamic> normalizeToolSchema(Map<String, dynamic> schema) {
+  final out = Map<String, dynamic>.from(schema)..remove(r'$schema');
+  out['type'] = 'object';
+  if (out['properties'] is! Map) out['properties'] = <String, dynamic>{};
+  final required = out['required'];
+  if (required != null && (required is! List || required.isEmpty)) out.remove('required');
+  return out;
+}
