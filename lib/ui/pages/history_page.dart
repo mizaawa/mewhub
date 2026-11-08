@@ -107,55 +107,95 @@ class _HistoryPageState extends State<HistoryPage> {
           ? EmptyState(icon: Icons.forum_outlined, title: t('还没有聊天记录', 'No chat history'))
           : ListView.separated(
               key: const ValueKey('history-conversation-list'),
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               itemCount: conversations.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final item = conversations[index];
-                final title = item.title.trim().isEmpty
-                    ? (item.preview.trim().isEmpty ? t('新对话', 'New chat') : item.preview.trim())
-                    : item.title.trim();
-                return Dismissible(
-                  key: ValueKey('history-dismiss-${item.id}'),
-                  direction: DismissDirection.endToStart,
-                  confirmDismiss: (_) => _confirmDelete(app, item),
-                  onDismissed: (_) => unawaited(_delete(app, item)),
-                  background: Container(
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 24),
-                    decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(26)),
-                    child: Icon(Icons.delete_outline_rounded, color: scheme.onErrorContainer),
-                  ),
-                  child: Card(
-                    key: ValueKey('history-item-${item.id}'),
-                    margin: EdgeInsets.zero,
-                    color: scheme.surfaceContainerLow,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                      title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(formatDateTime(item.createdAt)),
-                      ),
-                      trailing: IconButton(
-                        key: ValueKey('history-pin-${item.id}'),
-                        tooltip: item.pinned ? t('取消置顶', 'Unpin chat') : t('置顶', 'Pin chat'),
-                        onPressed: () => app.togglePin(item.id, !item.pinned),
-                        icon: Icon(
-                          item.pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                          color: item.pinned ? scheme.primary : scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      onTap: () async {
-                        await app.openConversation(item.id);
-                        if (context.mounted) Navigator.of(context).pop();
-                      },
-                    ),
-                  ),
-                );
-              },
+              separatorBuilder: (_, _) => const SizedBox(height: 6),
+              itemBuilder: (context, index) => _tile(context, app, conversations[index], scheme),
             ),
+    );
+  }
+
+  Widget _tile(BuildContext context, AppState app, ConversationSummary item, ColorScheme scheme) {
+    final title = item.title.trim().isEmpty
+        ? (item.preview.trim().isEmpty ? t('新对话', 'New chat') : item.preview.trim())
+        : item.title.trim();
+    return Dismissible(
+      key: ValueKey('history-dismiss-${item.id}'),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => _confirmDelete(app, item),
+      onDismissed: (_) => unawaited(_delete(app, item)),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(18)),
+        child: Icon(Icons.delete_outline_rounded, color: scheme.onErrorContainer),
+      ),
+      child: Card(
+        key: ValueKey('history-item-${item.id}'),
+        margin: EdgeInsets.zero,
+        color: scheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () async {
+            await app.openConversation(item.id);
+            if (context.mounted) Navigator.of(context).pop();
+          },
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          if (app.isGenerating(item.id)) ...[
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              key: ValueKey('history-generating-${item.id}'),
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: scheme.primary),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        formatDateTime(item.createdAt),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  key: ValueKey('history-pin-${item.id}'),
+                  tooltip: item.pinned ? t('取消置顶', 'Unpin chat') : t('置顶', 'Pin chat'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => app.togglePin(item.id, !item.pinned),
+                  icon: Icon(
+                    item.pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                    color: item.pinned ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -108,6 +108,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('history entries use a compact single-row layout', (tester) async {
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(ValueKey('history-item-${first.id}'));
+    expect(entry, findsOneWidget);
+    expect(tester.getSize(entry).height, lessThan(72));
+  });
+
   testWidgets('swipe deletion can be undone from history', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
