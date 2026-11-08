@@ -42,25 +42,22 @@ class NetworkImageTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: GestureDetector(
         onTap: () => openImageViewer(context, url),
-        child: Hero(
-          tag: 'img-$url',
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxHeight),
-              child: Image(
-                image: imageProviderFor(url),
-                fit: BoxFit.contain,
-                frameBuilder: (context, child, frame, sync) => AnimatedOpacity(
-                  opacity: frame == null && !sync ? 0 : 1,
-                  duration: const Duration(milliseconds: 350),
-                  child: child,
-                ),
-                errorBuilder: (context, e, st) => Container(
-                  height: 80,
-                  color: scheme.surfaceContainerHigh,
-                  child: Icon(Icons.broken_image_outlined, color: scheme.onSurfaceVariant),
-                ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Image(
+              image: imageProviderFor(url),
+              fit: BoxFit.contain,
+              frameBuilder: (context, child, frame, sync) => AnimatedOpacity(
+                opacity: frame == null && !sync ? 0 : 1,
+                duration: const Duration(milliseconds: 350),
+                child: child,
+              ),
+              errorBuilder: (context, e, st) => Container(
+                height: 80,
+                color: scheme.surfaceContainerHigh,
+                child: Icon(Icons.broken_image_outlined, color: scheme.onSurfaceVariant),
               ),
             ),
           ),
@@ -115,17 +112,18 @@ class _ImageViewer extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
+        fit: StackFit.expand,
         children: [
           Positioned.fill(
             child: GestureDetector(
               onTap: () => Navigator.pop(context),
               child: InteractiveViewer(
                 maxScale: 6,
-                child: Center(
-                  child: Hero(
-                    tag: 'img-$url',
-                    child: Image(image: imageProviderFor(url)),
-                  ),
+                child: SizedBox(
+                  key: const ValueKey('image-viewer-image-box'),
+                  width: MediaQuery.sizeOf(context).width,
+                  height: MediaQuery.sizeOf(context).height,
+                  child: Image(image: imageProviderFor(url), fit: BoxFit.contain),
                 ),
               ),
             ),

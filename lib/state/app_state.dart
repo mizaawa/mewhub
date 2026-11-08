@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../ai/message.dart';
 import '../chat/chat_controller.dart';
@@ -8,12 +8,13 @@ import '../chat/helpers.dart';
 import '../data/conversation.dart';
 import '../data/chat_folder.dart';
 import '../data/database.dart';
+import 'background_generation.dart';
 import '../tools/mcp.dart';
 import 'notifications.dart';
 import 'settings_store.dart';
 
 /// App-wide state: database, conversation list and the open chat.
-class AppState extends ChangeNotifier {
+class AppState extends ChangeNotifier with WidgetsBindingObserver {
   AppState({required this.store, required this.db});
 
   final SettingsStore store;
@@ -23,8 +24,10 @@ class AppState extends ChangeNotifier {
   List<ConversationSummary> conversations = [];
   Set<String> favoriteIds = {};
   ChatController? _chat;
+  final Map<String, ChatController> _sessions = {};
+  bool isAppInForeground = true;
   ChatController get chat =>
-      _chat ??= _newController(Conversation(assistantId: store.value.currentAssistantId, modelId: _lastModelId()));
+      _chat ??= _createSession(Conversation(assistantId: store.value.currentAssistantId, modelId: _lastModelId()));
 
   /// The model picked last, if it still exists, so new chats carry it over.
   String? _lastModelId() {
@@ -36,12 +39,31 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<int> listRevision = ValueNotifier(0);
 
   Future<void> init() async {
+    WidgetsBinding.instance.addObserver(this);
+    isAppInForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     await refreshList();
     favoriteIds = await db.favoriteMessageIds();
   }
 
-  ChatController _newController(Conversation c) =>
-      ChatController(store: store, db: db, mcp: mcp, conversation: c, onGenerationDone: _afterGeneration);
+  ChatController _newController(Conversation c) => ChatController(
+    store: store,
+    db: db,
+    mcp: mcp,
+    conversation: c,
+    onGenerationDone: _afterGeneration,
+    onGenerationStarted: (conversation) async {
+      await refreshList();
+      await BackgroundGeneration.start(conversation.id);
+    },
+    onGenerationSettled: _generationSettled,
+  );
+
+  bool isGenerating(String conversationId) => _sessions[conversationId]?.generating ?? false;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    isAppInForeground = state == AppLifecycleState.resumed;
+  }
 
   Future<void> refreshList() async {
     conversations = await db.listConversations();
@@ -65,41 +87,63 @@ class AppState extends ChangeNotifier {
               MessageNode(messages: [ChatMessage.text(Role.assistant, greeting)]),
             ],
     );
-    _swap(_newController(conv));
+    _swap(_sessions[conv.id] ?? _createSession(conv));
   }
 
   Future<void> openConversation(String id) async {
     if (_chat?.conversation.id == id) return;
-    final c = await db.getConversation(id);
-    if (c == null) return;
+    var session = _sessions[id];
+    if (session == null) {
+      final c = await db.getConversation(id);
+      if (c == null) return;
+      session = _createSession(c);
+    }
+    final c = session.conversation;
     if (c.assistantId != store.value.currentAssistantId && store.value.assistantById(c.assistantId) != null) {
       store.update((s) => s.copyWith(currentAssistantId: c.assistantId));
     }
-    _swap(_newController(c));
+    _swap(session);
   }
 
   void openForked(Conversation c) {
-    _swap(_newController(c));
+    _swap(_createSession(c));
     db.saveConversation(c).then((_) => refreshList());
   }
 
   void _swap(ChatController next) {
     final old = _chat;
+    if (identical(old, next)) return;
     _chat = next;
     notifyListeners();
-    // Let a running generation finish saving before disposing.
-    if (old != null) {
-      if (old.generating) {
-        old.addListener(() {
-          if (!old.generating) Future.microtask(old.dispose);
-        });
-      } else {
-        old.dispose();
-      }
+    if (old != null && !old.generating) _releaseSession(old);
+  }
+
+  ChatController _createSession(Conversation conversation) {
+    final session = _newController(conversation);
+    _sessions[conversation.id] = session;
+    return session;
+  }
+
+  Future<void> _generationSettled(Conversation conversation) async {
+    await BackgroundGeneration.stop(conversation.id);
+    await refreshList();
+    final session = _sessions[conversation.id];
+    if (session != null && !identical(session, _chat) && !session.generating) _releaseSession(session);
+  }
+
+  void _releaseSession(ChatController session) {
+    if (!identical(_chat, session)) {
+      _sessions.remove(session.conversation.id);
+      session.dispose();
     }
   }
 
   Future<void> deleteConversation(String id) async {
+    final session = _sessions[id];
+    if (session?.generating ?? false) {
+      session!.stop();
+      await session.whenIdle;
+    }
     await db.deleteConversation(id);
     if (_chat?.conversation.id == id) newChat();
     await refreshList();
@@ -186,8 +230,8 @@ class AppState extends ChangeNotifier {
   Future<void> _afterGeneration(Conversation c, ChatMessage last) async {
     await refreshList();
     final s = store.value;
-    if (s.display.notifyOnFinish) {
-      unawaited(Notifier.showDone(c.title.isEmpty ? 'MewHub' : c.title, last.text));
+    if (s.display.notifyOnFinish && !isAppInForeground) {
+      unawaited(Notifier.showDone(c.title.isEmpty ? 'MewHub' : c.title, last.text, conversationId: c.id));
     }
     final msgs = c.currentMessages;
     final userTurns = msgs.where((m) => m.role == Role.user).length;
@@ -221,7 +265,13 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
-    _chat?.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    final sessions = _sessions.values.toSet();
+    for (final controller in sessions) {
+      controller.dispose();
+    }
+    _sessions.clear();
+    if (_chat != null && !sessions.contains(_chat)) _chat!.dispose();
     mcp.closeAll();
     super.dispose();
   }

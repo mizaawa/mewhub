@@ -86,4 +86,18 @@ void main() {
     await Future.wait([store.flush(), store.flush(), store.flush()]);
     expect(await File(AppPaths.settingsPath).exists(), isTrue);
   });
+
+  test('last translation target and image generation choices persist across loads', () async {
+    final store = await SettingsStore.load();
+    store.update(
+      (s) =>
+          s.copyWith(translateTarget: 'Japanese', lastImageGenModelId: 'image-model-id', lastImageGenSize: '1536x1024'),
+    );
+    await store.flush();
+
+    final reloaded = await SettingsStore.load();
+    expect(reloaded.value.translateTarget, 'Japanese');
+    expect(reloaded.value.lastImageGenModelId, 'image-model-id');
+    expect(reloaded.value.lastImageGenSize, '1536x1024');
+  });
 }

@@ -434,7 +434,7 @@ class SidebarBottomActions extends StatelessWidget {
       (Icons.translate_rounded, t('翻译', 'Translate'), '/translator', 'translator'),
       (Icons.auto_awesome_rounded, t('绘图', 'Images'), '/imagegen', 'images'),
       (Icons.favorite_border_rounded, t('收藏', 'Favorites'), '/favorites', 'favorites'),
-      (Icons.manage_search_rounded, t('搜索', 'Search'), '/search', 'search'),
+      (Icons.history_rounded, t('历史', 'History'), '/history', 'history'),
       (Icons.settings_outlined, t('设置', 'Settings'), '/settings', 'settings'),
     ];
     return SafeArea(

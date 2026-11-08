@@ -424,12 +424,9 @@ class _Thumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: () => openImageViewer(context, url),
-    child: Hero(
-      tag: 'img-$url',
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Image(image: imageProviderFor(url), width: 110, height: 110, fit: BoxFit.cover),
-      ),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Image(image: imageProviderFor(url), width: 110, height: 110, fit: BoxFit.cover),
     ),
   );
 }

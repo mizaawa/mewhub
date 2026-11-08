@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">MewHub</string>
+    <string name="chat_generation_channel">Chat generation</string>
+    <string name="chat_generation_running">A reply is being generated</string>
+    <string name="chat_generations_running">%1$d replies are being generated</string>
+</resources>

@@ -15,6 +15,7 @@ void main() {
   late Directory sandbox;
   late File source;
   final sent = <List<Part>>[];
+  var gallerySelections = 0;
 
   setUp(() async {
     sandbox = await Directory.systemTemp.createTemp('mewhub_camera_composer_');
@@ -32,12 +33,18 @@ void main() {
     image.dispose();
     picture.dispose();
     sent.clear();
+    gallerySelections = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/image_picker'),
       (call) async {
-        expect(call.method, 'pickImage');
-        expect((call.arguments as Map)['source'], 0);
-        return source.path;
+        if (call.method == 'pickImage') {
+          expect((call.arguments as Map)['source'], 0);
+          return source.path;
+        }
+        expect(call.method, 'pickMultiImage');
+        gallerySelections++;
+        expect((call.arguments as Map)['limit'], 9);
+        return [source.path, source.path];
       },
     );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -95,6 +102,18 @@ void main() {
     await tester.pumpAndSettle();
     await tester.runAsync(() => tester.tap(find.text('拍照')));
     await _waitUntil(tester, () => find.text('编辑图片').evaluate().isNotEmpty);
+  }
+
+  Future<void> chooseGallery(WidgetTester tester) async {
+    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => tester.tap(find.text('相册')));
+    await _waitUntil(tester, () => find.byKey(const ValueKey('composer-photo-editor-0')).evaluate().isNotEmpty);
+  }
+
+  Future<void> confirmPhoto(WidgetTester tester) async {
+    await tester.runAsync(() => tester.tap(find.text('确认')));
+    await tester.pump();
   }
 
   testWidgets('camera waits for confirmation and sends the edited file', (tester) async {
@@ -163,6 +182,63 @@ void main() {
     expect(find.descendant(of: find.byType(Composer), matching: find.byType(Image)), findsNothing);
     expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'draft');
     expect(source.existsSync(), isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('gallery photos are edited individually before entering the composer', (tester) async {
+    await showComposer(tester);
+    await tester.enterText(find.byType(TextField), 'draft');
+    await chooseGallery(tester);
+
+    expect(gallerySelections, 1);
+    expect(sent, isEmpty);
+    expect(find.byKey(const ValueKey('composer-photo-editor-1')), findsNothing);
+    await confirmPhoto(tester);
+    await _waitUntil(tester, () => find.byKey(const ValueKey('composer-photo-editor-1')).evaluate().isNotEmpty);
+    expect(find.byKey(const ValueKey('composer-photo-editor-1')), findsOneWidget);
+    expect(find.descendant(of: find.byType(Composer, skipOffstage: false), matching: find.byType(Image)), findsNothing);
+
+    await confirmPhoto(tester);
+    await _waitUntil(
+      tester,
+      () =>
+          find.byType(Composer).evaluate().isNotEmpty &&
+          find
+              .descendant(of: find.byType(Composer), matching: find.byType(CircularProgressIndicator))
+              .evaluate()
+              .isEmpty,
+    );
+    expect(sent, isEmpty);
+    expect(find.descendant(of: find.byType(Composer), matching: find.byType(Image)), findsNWidgets(2));
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'draft');
+    expect(AppPaths.files.listSync(), hasLength(2));
+
+    await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+    await tester.pumpAndSettle();
+    expect(sent, hasLength(1));
+    expect(sent.single.whereType<ImagePart>(), hasLength(2));
+    expect(AppPaths.files.listSync(), hasLength(2));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('cancelling a later gallery edit keeps confirmed photos and cleans picked originals', (tester) async {
+    await showComposer(tester);
+    await chooseGallery(tester);
+    await confirmPhoto(tester);
+    await _waitUntil(tester, () => find.byKey(const ValueKey('composer-photo-editor-1')).evaluate().isNotEmpty);
+    await tester.runAsync(() => tester.tap(find.byIcon(Icons.arrow_back_rounded)));
+    await _waitUntil(
+      tester,
+      () =>
+          find.byType(Composer).evaluate().isNotEmpty &&
+          find
+              .descendant(of: find.byType(Composer), matching: find.byType(CircularProgressIndicator))
+              .evaluate()
+              .isEmpty,
+    );
+    expect(sent, isEmpty);
+    expect(find.descendant(of: find.byType(Composer), matching: find.byType(Image)), findsOneWidget);
+    expect(AppPaths.files.listSync(), hasLength(1));
     await tester.pumpWidget(const SizedBox());
   });
 }

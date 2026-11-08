@@ -38,6 +38,8 @@ class SearchHit {
   final DateTime updatedAt;
 }
 
+enum ConversationSearchSort { relevance, newest, oldest }
+
 /// SQLite storage for conversations, memories and favorites.
 /// The whole message tree is stored as a JSON blob per conversation; a
 /// flattened `search_text` column powers full-text search with LIKE.
@@ -168,13 +170,31 @@ class AppDatabase {
     folder: r['folder'] as String?,
   );
 
-  Future<List<SearchHit>> search(String query, {int limit = 100}) async {
+  Future<List<SearchHit>> search(
+    String query, {
+    String? assistantId,
+    ConversationSearchSort sort = ConversationSearchSort.relevance,
+    int limit = 100,
+  }) async {
     final q = query.trim();
     if (q.isEmpty) return [];
     final like = '%${q.replaceAll('%', r'\%').replaceAll('_', r'\_')}%';
+    final where = StringBuffer("(title LIKE ? ESCAPE '\\' OR search_text LIKE ? ESCAPE '\\')");
+    final args = <Object?>[like, like];
+    if (assistantId != null) {
+      where.write(' AND assistant_id = ?');
+      args.add(assistantId);
+    }
+    final ordering = switch (sort) {
+      ConversationSearchSort.relevance => "CASE WHEN title LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, updated_at DESC",
+      ConversationSearchSort.newest => 'updated_at DESC',
+      ConversationSearchSort.oldest => 'updated_at ASC',
+    };
+    if (sort == ConversationSearchSort.relevance) args.add(like);
+    args.add(limit);
     final rows = await _db.rawQuery(
-      r"SELECT id, title, search_text, updated_at FROM conversations WHERE title LIKE ? ESCAPE '\' OR search_text LIKE ? ESCAPE '\' ORDER BY updated_at DESC LIMIT ?",
-      [like, like, limit],
+      'SELECT id, title, search_text, updated_at FROM conversations WHERE $where ORDER BY $ordering LIMIT ?',
+      args,
     );
     final lower = q.toLowerCase();
     return rows.map((r) {

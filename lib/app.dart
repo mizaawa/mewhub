@@ -9,6 +9,7 @@ import 'ui/assistant/assistants_page.dart';
 import 'ui/chat/chat_page.dart';
 import 'ui/onboarding.dart';
 import 'ui/pages/extensions_pages.dart';
+import 'ui/pages/history_page.dart';
 import 'ui/pages/misc_settings.dart';
 import 'ui/pages/tools_pages.dart';
 import 'ui/settings/providers_page.dart';
@@ -70,6 +71,7 @@ class _MewHubAppState extends State<MewHubApp> with WidgetsBindingObserver {
     '/translator': (_) => const TranslatorPage(),
     '/imagegen': (_) => const ImageGenPage(),
     '/favorites': (_) => const FavoritesPage(),
+    '/history': (_) => const HistoryPage(),
     '/search': (_) => const SearchPage(),
   };
 

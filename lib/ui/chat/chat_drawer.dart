@@ -320,13 +320,30 @@ class _ChatDrawerState extends State<ChatDrawer> {
               borderRadius: BorderRadius.circular(14),
             ),
             child: ListTile(
-              minVerticalPadding: 12,
+              dense: true,
+              visualDensity: const VisualDensity(vertical: -2),
+              minVerticalPadding: 2,
               contentPadding: const EdgeInsets.symmetric(horizontal: 18),
-              title: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontSize: 16),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontSize: 14),
+                    ),
+                  ),
+                  if (app.isGenerating(c.id)) ...[
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      key: ValueKey('conversation-generating-${c.id}'),
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: scheme.primary),
+                    ),
+                  ],
+                ],
               ),
               onTap: () {
                 app.openConversation(c.id);
@@ -399,7 +416,7 @@ class _Section extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final style = Theme.of(context).textTheme.titleSmall?.copyWith(color: scheme.primary, fontWeight: FontWeight.w700);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 18, 14, 6),
+      padding: const EdgeInsets.fromLTRB(18, 12, 14, 4),
       child: Row(
         children: [
           if (icon != null) ...[Icon(icon, size: 14, color: scheme.primary), const SizedBox(width: 5)],

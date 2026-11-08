@@ -616,7 +616,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
         IconButton(
           tooltip: t('新对话', 'New chat'),
           icon: const Icon(Icons.edit_square),
-          onPressed: c.generating ? null : () => context.read<AppState>().newChat(),
+          onPressed: () => context.read<AppState>().newChat(),
         ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert_rounded),

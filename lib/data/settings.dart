@@ -204,6 +204,8 @@ class AppSettings {
     this.suggestionModelId,
     this.ocrModelId,
     this.imageModelId,
+    this.lastImageGenModelId,
+    this.lastImageGenSize = '1024x1024',
     this.compressModelId,
     this.titlePrompt = defaultTitlePrompt,
     this.suggestionPrompt = defaultSuggestionPrompt,
@@ -250,6 +252,8 @@ class AppSettings {
   final String? suggestionModelId;
   final String? ocrModelId;
   final String? imageModelId;
+  final String? lastImageGenModelId;
+  final String lastImageGenSize;
   final String? compressModelId;
   final String titlePrompt;
   final String suggestionPrompt;
@@ -332,6 +336,8 @@ class AppSettings {
     Object? suggestionModelId = _keep,
     Object? ocrModelId = _keep,
     Object? imageModelId = _keep,
+    Object? lastImageGenModelId = _keep,
+    String? lastImageGenSize,
     Object? compressModelId = _keep,
     String? titlePrompt,
     String? suggestionPrompt,
@@ -377,6 +383,10 @@ class AppSettings {
     suggestionModelId: identical(suggestionModelId, _keep) ? this.suggestionModelId : suggestionModelId as String?,
     ocrModelId: identical(ocrModelId, _keep) ? this.ocrModelId : ocrModelId as String?,
     imageModelId: identical(imageModelId, _keep) ? this.imageModelId : imageModelId as String?,
+    lastImageGenModelId: identical(lastImageGenModelId, _keep)
+        ? this.lastImageGenModelId
+        : lastImageGenModelId as String?,
+    lastImageGenSize: lastImageGenSize ?? this.lastImageGenSize,
     compressModelId: identical(compressModelId, _keep) ? this.compressModelId : compressModelId as String?,
     titlePrompt: titlePrompt ?? this.titlePrompt,
     suggestionPrompt: suggestionPrompt ?? this.suggestionPrompt,
@@ -440,6 +450,8 @@ class AppSettings {
       suggestionModelId: asStrOrNull(j['suggestionModelId']),
       ocrModelId: asStrOrNull(j['ocrModelId']),
       imageModelId: asStrOrNull(j['imageModelId']),
+      lastImageGenModelId: asStrOrNull(j['lastImageGenModelId']),
+      lastImageGenSize: asStr(j['lastImageGenSize'], '1024x1024'),
       compressModelId: asStrOrNull(j['compressModelId']),
       titlePrompt: asStr(j['titlePrompt'], defaultTitlePrompt),
       suggestionPrompt: asStr(j['suggestionPrompt'], defaultSuggestionPrompt),
@@ -493,6 +505,8 @@ class AppSettings {
     'suggestionModelId': suggestionModelId,
     'ocrModelId': ocrModelId,
     'imageModelId': imageModelId,
+    'lastImageGenModelId': lastImageGenModelId,
+    'lastImageGenSize': lastImageGenSize,
     'compressModelId': compressModelId,
     'titlePrompt': titlePrompt,
     'suggestionPrompt': suggestionPrompt,

@@ -141,23 +141,35 @@ class ComposerState extends State<Composer> {
     }
   }
 
-  Future<void> _takePhotoAndEdit() async {
+  Future<void> _takePhotoAndEdit() => _editPickedPhotos(() async {
+    final photo = await Attachments.takePhoto();
+    return photo == null ? const [] : [photo];
+  });
+
+  Future<void> _pickPhotosAndEdit() => _editPickedPhotos(Attachments.pickImages);
+
+  Future<void> _editPickedPhotos(Future<List<ImagePart>> Function() picker) async {
     if (_busy) return;
     _focus.unfocus();
     setState(() {
       _busy = true;
       _toolsOpen = false;
     });
-    ImagePart? captured;
+    var photos = <ImagePart>[];
+    final kept = <String>[];
     try {
-      final photo = await Attachments.takePhoto();
-      captured = photo;
-      if (photo == null || !mounted) return;
-      final edited = await Navigator.of(context)
-          .push<String>(MaterialPageRoute(builder: (_) => ImageEditorPage(imageUrl: photo.url)));
-      if (edited != null) {
+      photos = await picker();
+      for (var i = 0; i < photos.length; i++) {
+        if (!mounted) break;
+        final edited = await Navigator.of(context).push<String>(
+          MaterialPageRoute(
+            builder: (_) => ImageEditorPage(key: ValueKey('composer-photo-editor-$i'), imageUrl: photos[i].url),
+          ),
+        );
+        if (edited == null) break;
         if (mounted) {
           setState(() => _attachments.add(ImagePart(edited)));
+          kept.add(edited);
         } else {
           await Attachments.deleteStored(edited);
         }
@@ -166,8 +178,14 @@ class ComposerState extends State<Composer> {
       if (mounted) toast(context, '$e', error: true);
     } finally {
       try {
-        final photo = captured;
-        if (photo != null) await Attachments.deleteStored(photo.url);
+        for (final photo in photos) {
+          await Attachments.deleteStored(photo.url);
+        }
+        if (!mounted) {
+          for (final image in kept) {
+            await Attachments.deleteStored(image);
+          }
+        }
       } catch (e) {
         debugPrint('Unable to remove temporary photo: $e');
       } finally {
@@ -475,7 +493,7 @@ class ComposerState extends State<Composer> {
         icon: Icons.photo_library_outlined,
         label: t('相册', 'Photos'),
         enabled: widget.supportsVision,
-        onTap: () => _pick(() async => await Attachments.pickImages()),
+        onTap: _pickPhotosAndEdit,
       ),
       _ToolTile(
         icon: Icons.photo_camera_outlined,

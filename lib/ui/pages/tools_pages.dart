@@ -17,6 +17,7 @@ import '../../core/paths.dart';
 import '../../core/util.dart';
 import '../../data/backup.dart';
 import '../../data/database.dart';
+import '../../data/settings.dart';
 import '../../state/app_state.dart';
 import '../../state/settings_store.dart';
 import '../chat/model_picker.dart';
@@ -287,7 +288,13 @@ class _TranslatorPageState extends State<TranslatorPage> {
     'Spanish': 'Español',
     'Russian': 'Русский',
   };
-  late String _target = I18n.isZh ? 'English' : 'Simplified Chinese';
+  late String _target = _initialTarget();
+
+  String _initialTarget() {
+    final saved = context.read<SettingsStore>().value.translateTarget;
+    if (_langs.containsKey(saved)) return saved;
+    return I18n.isZh ? 'English' : 'Simplified Chinese';
+  }
 
   @override
   void dispose() {
@@ -355,7 +362,11 @@ class _TranslatorPageState extends State<TranslatorPage> {
                     initialValue: _target,
                     decoration: InputDecoration(labelText: t('目标语言', 'Target language')),
                     items: [for (final e in _langs.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
-                    onChanged: (v) => setState(() => _target = v ?? _target),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => _target = v);
+                      context.read<SettingsStore>().update((s) => s.copyWith(translateTarget: v));
+                    },
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -415,8 +426,11 @@ class _ImageGenPageState extends State<ImageGenPage> {
   final _prompt = TextEditingController();
   final List<String> _images = [];
   bool _busy = false;
-  String _size = '1024x1024';
-  String? _modelId;
+
+  static const _imageSizes = {'1024x1024', '1024x1536', '1536x1024'};
+
+  String? _selectedModelId(AppSettings settings) =>
+      settings.findModel(settings.lastImageGenModelId)?.model.id ?? settings.imageModelId;
 
   @override
   void dispose() {
@@ -427,7 +441,7 @@ class _ImageGenPageState extends State<ImageGenPage> {
   Future<void> _go() async {
     final store = context.read<SettingsStore>();
     final s = store.value;
-    final r = s.findModel(_modelId ?? s.imageModelId);
+    final r = s.findModel(_selectedModelId(s));
     if (r == null) {
       toast(context, t('先选择一个绘图模型', 'Pick an image model first'), error: true);
       return;
@@ -435,7 +449,11 @@ class _ImageGenPageState extends State<ImageGenPage> {
     if (_prompt.text.trim().isEmpty) return;
     setState(() => _busy = true);
     try {
-      final out = await providerFor(r.provider).generateImage(r.model, _prompt.text.trim(), size: _size);
+      final out = await providerFor(r.provider).generateImage(
+        r.model,
+        _prompt.text.trim(),
+        size: _imageSizes.contains(s.lastImageGenSize) ? s.lastImageGenSize : '1024x1024',
+      );
       final stored = <String>[];
       for (final u in out) {
         if (u.startsWith('data:')) {
@@ -456,7 +474,8 @@ class _ImageGenPageState extends State<ImageGenPage> {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<SettingsStore>().value;
-    final model = s.findModel(_modelId ?? s.imageModelId);
+    final model = s.findModel(_selectedModelId(s));
+    final size = _imageSizes.contains(s.lastImageGenSize) ? s.lastImageGenSize : '1024x1024';
     return Scaffold(
       appBar: AppBar(title: Text(t('绘图', 'Images'))),
       body: CustomScrollView(
@@ -480,9 +499,13 @@ class _ImageGenPageState extends State<ImageGenPage> {
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
+                          key: const ValueKey('imagegen-model-picker'),
                           onPressed: () async {
+                            final settingsStore = context.read<SettingsStore>();
                             final id = await pickModel(context, selected: model?.model.id, type: ModelType.image);
-                            if (id != null && id.isNotEmpty) setState(() => _modelId = id);
+                            if (!mounted) return;
+                            if (id == null || id.isEmpty) return;
+                            settingsStore.update((s) => s.copyWith(lastImageGenModelId: id));
                           },
                           icon: const Icon(Icons.brush_outlined),
                           label: Text(
@@ -493,7 +516,7 @@ class _ImageGenPageState extends State<ImageGenPage> {
                       ),
                       const SizedBox(width: 8),
                       DropdownButton<String>(
-                        value: _size,
+                        value: size,
                         underline: const SizedBox.shrink(),
                         borderRadius: BorderRadius.circular(14),
                         items: const [
@@ -501,7 +524,9 @@ class _ImageGenPageState extends State<ImageGenPage> {
                           DropdownMenuItem(value: '1024x1536', child: Text('2:3')),
                           DropdownMenuItem(value: '1536x1024', child: Text('3:2')),
                         ],
-                        onChanged: (v) => setState(() => _size = v ?? _size),
+                        onChanged: (v) {
+                          if (v != null) context.read<SettingsStore>().update((s) => s.copyWith(lastImageGenSize: v));
+                        },
                       ),
                       const SizedBox(width: 8),
                       FilledButton(
@@ -543,12 +568,9 @@ class _ImageGenPageState extends State<ImageGenPage> {
                   index: i,
                   child: GestureDetector(
                     onTap: () => openImageViewer(context, _images[i]),
-                    child: Hero(
-                      tag: 'img-${_images[i]}',
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image(image: imageProviderFor(_images[i]), fit: BoxFit.cover),
-                      ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image(image: imageProviderFor(_images[i]), fit: BoxFit.cover),
                     ),
                   ),
                 ),
@@ -567,76 +589,233 @@ class SearchPage extends StatefulWidget {
   State<SearchPage> createState() => _SearchPageState();
 }
 
+enum _SearchScope { currentAssistant, allAssistants }
+
 class _SearchPageState extends State<SearchPage> {
   List<SearchHit> _hits = [];
   Timer? _debounce;
   String _q = '';
+  final _query = TextEditingController();
+  _SearchScope _scope = _SearchScope.currentAssistant;
+  ConversationSearchSort _sort = ConversationSearchSort.relevance;
+  bool _loading = false;
+  int _searchGeneration = 0;
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _query.dispose();
     super.dispose();
   }
 
   void _onChanged(String v) {
-    _q = v;
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 250), () async {
-      final hits = await context.read<AppState>().db.search(v);
-      if (mounted && v == _q) setState(() => _hits = hits);
+    setState(() {
+      _q = v;
+      _hits = [];
+      _loading = false;
     });
+    _searchGeneration++;
+    _debounce?.cancel();
+    if (v.trim().isNotEmpty) _debounce = Timer(const Duration(milliseconds: 300), _search);
+  }
+
+  Future<void> _search() async {
+    _debounce?.cancel();
+    final query = _q.trim();
+    if (query.isEmpty) {
+      _searchGeneration++;
+      if (mounted) setState(() => _hits = []);
+      return;
+    }
+    final generation = ++_searchGeneration;
+    final assistantId = _scope == _SearchScope.currentAssistant
+        ? context.read<SettingsStore>().value.currentAssistantId
+        : null;
+    setState(() {
+      _loading = true;
+      _hits = [];
+    });
+    try {
+      final hits = await context.read<AppState>().db.search(query, assistantId: assistantId, sort: _sort);
+      if (mounted && generation == _searchGeneration) setState(() => _hits = hits);
+    } catch (e) {
+      if (mounted && generation == _searchGeneration) toast(context, '$e', error: true);
+    } finally {
+      if (mounted && generation == _searchGeneration) setState(() => _loading = false);
+    }
+  }
+
+  void _changeScope(_SearchScope scope) {
+    if (_scope == scope) return;
+    setState(() => _scope = scope);
+    _search();
+  }
+
+  void _changeSort(ConversationSearchSort sort) {
+    if (_sort == sort) return;
+    setState(() => _sort = sort);
+    _search();
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: t('搜索所有消息', 'Search all messages'),
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            filled: false,
-          ),
-          onChanged: _onChanged,
-        ),
-      ),
-      body: _hits.isEmpty
-          ? EmptyState(
-              icon: Icons.manage_search_rounded,
-              title: _q.isEmpty ? t('输入关键词', 'Type to search') : t('没有结果', 'No results'),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(12),
-              itemCount: _hits.length,
-              separatorBuilder: (context, i) => const SizedBox(height: 6),
-              itemBuilder: (context, i) {
-                final h = _hits[i];
-                return EntranceFx(
-                  index: i,
-                  child: Card(
-                    child: ListTile(
-                      title: Text(
-                        h.title.isEmpty ? t('未命名对话', 'Untitled chat') : h.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: _Highlighted(text: h.snippet, query: _q, color: scheme.primary),
-                      trailing: Text(formatDate(h.updatedAt), style: Theme.of(context).textTheme.labelSmall),
-                      onTap: () async {
-                        await context.read<AppState>().openConversation(h.conversationId);
-                        if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
-                      },
-                    ),
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar.large(
+            title: Text(t('搜索消息', 'Search messages')),
+            actions: [
+              PopupMenuButton<ConversationSearchSort>(
+                key: const ValueKey('message-search-sort'),
+                tooltip: t('排序', 'Sort results'),
+                initialValue: _sort,
+                onSelected: _changeSort,
+                icon: const Icon(Icons.sort_rounded),
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: ConversationSearchSort.relevance,
+                    child: _sortLabel(ConversationSearchSort.relevance, t('相关度', 'Relevance')),
                   ),
-                );
-              },
+                  PopupMenuItem(
+                    value: ConversationSearchSort.newest,
+                    child: _sortLabel(ConversationSearchSort.newest, t('最新优先', 'Newest first')),
+                  ),
+                  PopupMenuItem(
+                    value: ConversationSearchSort.oldest,
+                    child: _sortLabel(ConversationSearchSort.oldest, t('最早优先', 'Oldest first')),
+                  ),
+                ],
+              ),
+              IconButton(
+                key: const ValueKey('message-search-refresh'),
+                tooltip: t('重新搜索', 'Search again'),
+                onPressed: _search,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: TextField(
+                key: const ValueKey('message-search-query'),
+                controller: _query,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: _onChanged,
+                onSubmitted: (_) => _search(),
+                decoration: InputDecoration(
+                  hintText: t('搜索消息内容…', 'Search message content…'),
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _q.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: t('清除', 'Clear'),
+                          onPressed: () {
+                            _query.clear();
+                            _onChanged('');
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(40),
+                    borderSide: BorderSide(color: scheme.primary, width: 1.5),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(40),
+                    borderSide: BorderSide(color: scheme.outlineVariant),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(40),
+                    borderSide: BorderSide(color: scheme.primary, width: 2),
+                  ),
+                ),
+              ),
             ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SegmentedButton<_SearchScope>(
+                key: const ValueKey('message-search-scope'),
+                showSelectedIcon: true,
+                segments: [
+                  ButtonSegment(value: _SearchScope.currentAssistant, label: Text(t('当前助手', 'Current assistant'))),
+                  ButtonSegment(value: _SearchScope.allAssistants, label: Text(t('所有助手', 'All assistants'))),
+                ],
+                selected: {_scope},
+                onSelectionChanged: (selection) => _changeScope(selection.first),
+              ),
+            ),
+          ),
+          if (_loading)
+            SliverToBoxAdapter(
+              child: LinearProgressIndicator(
+                key: const ValueKey('message-search-loading'),
+                minHeight: 2,
+                color: scheme.primary,
+              ),
+            ),
+          if (_q.trim().isEmpty || (!_loading && _hits.isEmpty))
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Text(
+                  _q.trim().isEmpty
+                      ? t('输入关键词并搜索消息', 'Enter a keyword to search messages')
+                      : t('没有找到匹配的消息', 'No matching messages found'),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ),
+            )
+          else if (_hits.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final hit = _hits[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: EntranceFx(
+                      index: index,
+                      child: Card(
+                        color: scheme.surfaceContainerLow,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                          title: Text(
+                            hit.title.isEmpty ? t('未命名对话', 'Untitled chat') : hit.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: _Highlighted(text: hit.snippet, query: _q, color: scheme.primary),
+                          ),
+                          trailing: Text(formatDateTime(hit.updatedAt), style: Theme.of(context).textTheme.labelSmall),
+                          onTap: () async {
+                            await context.read<AppState>().openConversation(hit.conversationId);
+                            if (context.mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+                          },
+                        ),
+                      ),
+                    ),
+                  );
+                }, childCount: _hits.length),
+              ),
+            ),
+        ],
+      ),
     );
   }
+
+  Widget _sortLabel(ConversationSearchSort sort, String label) => Row(
+    children: [
+      Expanded(child: Text(label)),
+      if (_sort == sort) const Icon(Icons.check_rounded, size: 18),
+    ],
+  );
 }
 
 class _Highlighted extends StatelessWidget {

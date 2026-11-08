@@ -25,7 +25,8 @@ MewHub 是一个多供应商 AI 聊天客户端，功能参考 [RikkaHub](https:
 - **MCP**：远程 Streamable HTTP 与 SSE 服务器，按工具开关
 - **模型内置能力**：OpenAI / Claude / Gemini 原生联网搜索、Gemini URL 上下文、生图模型
 - **多模态**：图片、拍照、PDF / Word / PPT / Excel / EPUB / 代码等文档（本地提取文本）
-- **对话管理**：分支（重新生成 / 编辑后切换版本）、分叉新对话、置顶、搜索、按日期分组、收藏、上下文压缩、导出 Markdown / JSON
+- **对话管理**：历史页支持置顶、侧滑删除与撤销、保留置顶并清理其余记录；消息搜索可按当前 / 所有助手筛选，按相关度或时间排序并高亮命中；另有分支、分叉、收藏、上下文压缩、Markdown / JSON 导出
+- **后台会话**：发送后立即进入侧栏，可切换到新对话而不打断旧回复；生成中的标题旁显示进度，Android 后台持续流式生成并在完成时按通知设置提醒；相册多选图片会逐张进入裁剪、旋转和标记编辑器。iOS 后台运行时间由系统限制。
 - **助手**：系统提示词变量、开场白、预设消息、消息模板、正则替换、世界书与模式注入、独立参数与背景图；导入 SillyTavern 角色卡（PNG / JSON，V1-V3）与世界书
 - **其它**：翻译、绘图、语音输入、朗读、标题与追问建议自动生成、用量统计、请求日志、WebDAV 与本地备份、浅色 / 深色 / 六种主题色、中英双语、平板双栏布局
 
@@ -79,7 +80,7 @@ flutter run
 
 MewHub is a multi-provider AI chat client inspired by [RikkaHub](https://github.com/rikkahub/rikkahub), rebuilt in Flutter for Android and iOS, with a milk-white theme and motion throughout.
 
-**Highlights:** native OpenAI Chat / OpenAI Responses / Anthropic / Gemini streaming; any compatible gateway with custom URLs, headers, bodies and key rotation; reasoning controls mapped per vendor; agent tool loop with web search, page reading, memory and MCP; vision and document attachments; message branches, forks, search, favorites and context compression; assistants with lorebooks, regexes and SillyTavern card import; translation, image generation, voice input, TTS, usage stats, WebDAV backup; light/dark themes, Chinese and English.
+**Highlights:** native OpenAI Chat / OpenAI Responses / Anthropic / Gemini streaming; any compatible gateway with custom URLs, headers, bodies and key rotation; reasoning controls mapped per vendor; agent tool loop with web search, page reading, memory and MCP; vision and document attachments; editable gallery photos; parallel background chats with Android streaming and completion notifications; a conversation history page with pinning, swipe-to-delete and undo, plus message search scoped by assistant with relevance/time sorting and highlighted matches; message branches, forks, favorites and context compression; assistants with lorebooks, regexes and SillyTavern card import; translation, image generation, voice input, TTS, usage stats, WebDAV backup; light/dark themes, Chinese and English.
 
 **Privacy:** keys live in the iOS Keychain / Android Keystore; data stays in the app sandbox; no analytics; requests go only to endpoints you configure.
 

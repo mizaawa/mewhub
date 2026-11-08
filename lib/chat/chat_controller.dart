@@ -37,12 +37,16 @@ class ChatController extends ChangeNotifier {
     required this.mcp,
     required Conversation conversation,
     this.onGenerationDone,
+    this.onGenerationStarted,
+    this.onGenerationSettled,
   }) : _conv = conversation;
 
   final SettingsStore store;
   final AppDatabase db;
   final McpManager mcp;
   final void Function(Conversation c, ChatMessage last)? onGenerationDone;
+  final Future<void> Function(Conversation c)? onGenerationStarted;
+  final Future<void> Function(Conversation c)? onGenerationSettled;
 
   Conversation _conv;
   Conversation get conversation => _conv;
@@ -50,6 +54,8 @@ class ChatController extends ChangeNotifier {
   bool _generating = false;
   bool get generating => _generating;
   CancelToken? _cancel;
+  Completer<void>? _idle;
+  Future<void> get whenIdle => _idle?.future ?? Future<void>.value();
   String? lastError;
 
   /// Mode toggles chosen for this chat (in addition to the assistant's).
@@ -80,7 +86,6 @@ class ChatController extends ChangeNotifier {
     final user = ChatMessage(role: Role.user, parts: parts);
     _conv = _conv.upsertMessage('n-${user.id}', user).copyWith(updatedAt: DateTime.now(), suggestions: const []);
     notifyListeners();
-    await _persist(force: true);
     await _generate();
   }
 
@@ -250,6 +255,38 @@ class ChatController extends ChangeNotifier {
       assistant.enableWebSearch && model.builtInTools.contains(BuiltInTool.search);
 
   Future<void> _generate({String? targetNodeId}) async {
+    if (_disposed || _generating) return;
+    _generating = true;
+    lastError = null;
+    final cancel = _cancel = CancelToken();
+    final idle = _idle = Completer<void>();
+    notifyListeners();
+    try {
+      await _persist(force: true);
+      try {
+        await onGenerationStarted?.call(_conv);
+      } catch (e) {
+        debugPrint('Unable to start background generation: $e');
+      }
+      if (!cancel.isCancelled && !_disposed) await _generateResponse(targetNodeId: targetNodeId);
+    } catch (e) {
+      if (!cancel.isCancelled) lastError = '$e';
+    } finally {
+      await _persist(force: true);
+      _generating = false;
+      _cancel = null;
+      try {
+        await onGenerationSettled?.call(_conv);
+      } catch (e) {
+        debugPrint('Background generation release failed: $e');
+      }
+      _notifyTimer?.cancel();
+      if (!_disposed) notifyListeners();
+      idle.complete();
+    }
+  }
+
+  Future<void> _generateResponse({String? targetNodeId}) async {
     final resolved = resolvedModel;
     if (resolved == null) {
       lastError = t('请先在设置里添加供应商并选择模型', 'Add a provider and pick a model in Settings first');
@@ -271,9 +308,6 @@ class ChatController extends ChangeNotifier {
             thresholdPercent: settings.autoCompressThreshold,
           )
         : null;
-    _generating = true;
-    lastError = null;
-    _cancel = CancelToken();
     final cancel = _cancel!;
     final nodeId = targetNodeId ?? 'n-${DateTime.now().microsecondsSinceEpoch}';
     var msg = ChatMessage(role: Role.assistant, parts: const [], modelId: model.id, modelName: model.displayName);
@@ -363,12 +397,8 @@ class ChatController extends ChangeNotifier {
         error: lastError,
       );
       _conv = _conv.upsertMessage(nodeId, msg).copyWith(updatedAt: DateTime.now());
-      _generating = false;
-      _cancel = null;
-      _notifyTimer?.cancel();
-      if (!_disposed) notifyListeners();
       await _persist(force: true);
-      if (lastError == null) onGenerationDone?.call(_conv, msg);
+      if (lastError == null && !cancel.isCancelled && !_disposed) onGenerationDone?.call(_conv, msg);
     }
   }
 

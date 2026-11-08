@@ -31,11 +31,11 @@ class Notifier {
     return false;
   }
 
-  static Future<void> showDone(String title, String body) async {
+  static Future<void> showDone(String title, String body, {required String conversationId}) async {
     try {
       await init();
       await _plugin.show(
-        id: 1001,
+        id: _notificationId(conversationId),
         title: title,
         body: body.length > 120 ? '${body.substring(0, 120)}…' : body,
         notificationDetails: const NotificationDetails(
@@ -52,4 +52,7 @@ class Notifier {
       );
     } catch (_) {}
   }
+
+  static int _notificationId(String conversationId) =>
+      conversationId.codeUnits.fold<int>(0, (hash, unit) => (hash * 31 + unit) & 0x7fffffff);
 }
