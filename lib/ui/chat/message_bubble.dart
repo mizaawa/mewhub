@@ -12,6 +12,7 @@ import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
 import '../widgets/markdown_view.dart';
 import '../widgets/motion.dart';
+import '../widgets/streaming_reveal.dart';
 import 'reasoning_card.dart';
 import 'tool_card.dart';
 
@@ -166,8 +167,9 @@ class MessageBubble extends StatelessWidget {
           final shown = applyRegexes(text, assistant.regexes, RegexScope.assistant, visual: true);
           if (shown.trim().isEmpty) continue;
           children.add(
-            MarkdownView(
-              data: shown,
+            StreamingReveal(
+              text: shown,
+              streaming: streaming,
               latex: display.latex,
               codeWrap: display.codeWrap,
               lineNumbers: display.codeLineNumbers,
@@ -236,6 +238,9 @@ class MessageBubble extends StatelessWidget {
     final err = m.error ?? (isLast ? error : null);
     if (err != null && !streaming) {
       children.add(_ErrorCard(message: err, onRetry: () => onAction(MessageAction.regenerate)));
+    }
+    if (m.interrupted && !streaming) {
+      children.add(_InterruptedMark(onRetry: () => onAction(MessageAction.regenerate)));
     }
 
     final content = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
@@ -549,6 +554,43 @@ class _ServerToolChipState extends State<_ServerToolChip> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Marks a reply the user stopped, with a one-tap way to ask again.
+class _InterruptedMark extends StatelessWidget {
+  const _InterruptedMark({required this.onRetry});
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.pause_circle_outline_rounded, size: 14, color: scheme.onSurfaceVariant.withValues(alpha: 0.8)),
+          const SizedBox(width: 5),
+          Text(
+            t('已停止生成', 'Stopped'),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(width: 2),
+          Pressable(
+            onTap: onRetry,
+            scale: 0.9,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              child: Text(
+                t('继续', 'Retry'),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.primary),
+              ),
             ),
           ),
         ],

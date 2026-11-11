@@ -26,6 +26,7 @@ MewHub 是一个多供应商 AI 聊天客户端，功能参考 [RikkaHub](https:
 - **模型内置能力**：OpenAI / Claude / Gemini 原生联网搜索、Gemini URL 上下文、生图模型
 - **多模态**：图片、拍照、PDF / Word / PPT / Excel / EPUB / 代码等文档（本地提取文本）
 - **对话管理**：历史页支持置顶、侧滑删除与撤销、保留置顶并清理其余记录；消息搜索可按当前 / 所有助手筛选，按相关度或时间排序并高亮命中；另有分支、分叉、收藏、上下文压缩、Markdown 导出、本对话用量面板
+- **流式书写**：回复逐字落屏而不是整段跳出，落后的文字会自动追赶，结束时光标收束；中途停止会留下已经到达的内容并标记为「已停止生成」，可一键继续，下一轮对话仍把它当作上下文
 - **后台会话**：发送后立即进入侧栏，可切换到新对话而不打断旧回复；生成中的标题旁显示进度，Android 后台持续流式生成并在完成时按通知设置提醒；相册多选图片会逐张进入裁剪、旋转和标记编辑器。iOS 后台运行时间由系统限制。
 - **助手**：系统提示词变量、开场白、预设消息、消息模板、正则替换、世界书与模式注入、独立参数与背景图；导入 SillyTavern 角色卡（PNG / JSON，V1-V3）与世界书
 - **扩展抽屉**：在聊天里直接插入快捷短语、开关模式与世界书、查看和删除记忆
@@ -82,7 +83,7 @@ flutter run
 
 MewHub is a multi-provider AI chat client inspired by [RikkaHub](https://github.com/rikkahub/rikkahub), rebuilt in Flutter for Android and iOS, with a milk-white theme and motion throughout.
 
-**Highlights:** native OpenAI Chat / OpenAI Responses / Anthropic / Gemini streaming; any compatible gateway with custom URLs, headers, bodies and key rotation; reasoning controls mapped per vendor; agent tool loop with web search, page reading, memory and MCP, with in-chat drawers to toggle MCP servers, modes, lorebooks and quick messages; vision and document attachments; editable gallery photos; parallel background chats with Android streaming and completion notifications; a conversation history page with pinning, swipe-to-delete and undo, plus message search scoped by assistant with relevance/time sorting and highlighted matches; message branches, forks, favorites and context compression; assistants with lorebooks, regexes and SillyTavern card import; translation, image generation, voice input, TTS, usage stats, WebDAV backup and multi-code QR transfer of the whole configuration; light/dark themes, Chinese and English.
+**Highlights:** native OpenAI Chat / OpenAI Responses / Anthropic / Gemini streaming; any compatible gateway with custom URLs, headers, bodies and key rotation; reasoning controls mapped per vendor; agent tool loop with web search, page reading, memory and MCP, with in-chat drawers to toggle MCP servers, modes, lorebooks and quick messages; vision and document attachments; editable gallery photos; parallel background chats with Android streaming and completion notifications; a conversation history page with pinning, swipe-to-delete and undo, plus message search scoped by assistant with relevance/time sorting and highlighted matches; message branches, forks, favorites and context compression; replies that write themselves in character by character; editing a sent message always applies and regenerates, and a stopped reply keeps the text that arrived as context; assistants with lorebooks, regexes and SillyTavern card import; translation, image generation, voice input, TTS, usage stats, WebDAV backup and multi-code QR transfer of the whole configuration; light/dark themes, Chinese and English.
 
 **Privacy:** keys live in the iOS Keychain / Android Keystore; data stays in the app sandbox; no analytics; requests go only to endpoints you configure.
 

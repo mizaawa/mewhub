@@ -58,6 +58,15 @@ class ChatController extends ChangeNotifier {
   Future<void> get whenIdle => _idle?.future ?? Future<void>.value();
   String? lastError;
 
+  /// Set when the user pressed stop, so the partial reply is kept as history
+  /// instead of being discarded.
+  bool _stoppedByUser = false;
+
+  /// Bumped for every generation. A stream whose epoch is stale has been
+  /// superseded (edit, regenerate, new turn) and must not write back into the
+  /// conversation, or it would resurrect or overwrite a newer turn.
+  int _epoch = 0;
+
   /// Mode toggles chosen for this chat (in addition to the assistant's).
   Set<String> get modeIds => _conv.modeIds;
 
@@ -105,11 +114,19 @@ class ChatController extends ChangeNotifier {
   }
 
   /// Edits a user message: adds a new branch at that node and regenerates.
-  Future<void> editAndResend(int nodeIndex, List<Part> parts) async {
-    if (_generating) return;
-    final node = _conv.nodes[nodeIndex];
-    final edited = ChatMessage(role: node.role, parts: parts);
-    final nodes = [..._conv.nodes.take(nodeIndex), node.upsert(edited)];
+  ///
+  /// An edit always wins over a reply that is still streaming: the stream is
+  /// cancelled and allowed to settle first, so the edit cannot be swallowed by
+  /// the `_generating` guard and its result cannot be overwritten afterwards.
+  /// The node is re-located by [messageId] after waiting, because the
+  /// conversation may have grown while the editor was open.
+  Future<void> editAndResend(String messageId, List<Part> parts) async {
+    await _interrupt();
+    final index = _conv.indexOfMessage(messageId);
+    if (index < 0) return;
+    final node = _conv.nodes[index];
+    final edited = ChatMessage(id: messageId, role: node.current.role, parts: parts, createdAt: node.current.createdAt);
+    final nodes = [..._conv.nodes.take(index), node.upsert(edited)];
     _conv = _conv.copyWith(nodes: nodes, updatedAt: DateTime.now());
     notifyListeners();
     if (node.role == Role.user) {
@@ -120,14 +137,25 @@ class ChatController extends ChangeNotifier {
   }
 
   /// Edits a message in place (no regeneration).
-  Future<void> editInPlace(int nodeIndex, List<Part> parts) async {
-    final node = _conv.nodes[nodeIndex];
-    final updated = node.current.copyWith(parts: parts);
+  Future<void> editInPlace(String messageId, List<Part> parts) async {
+    await _interrupt();
+    final index = _conv.indexOfMessage(messageId);
+    if (index < 0) return;
+    final node = _conv.nodes[index];
+    final updated = node.current.copyWith(parts: parts, interrupted: false);
     final list = [..._conv.nodes];
-    list[nodeIndex] = node.upsert(updated);
+    list[index] = node.upsert(updated);
     _conv = _conv.copyWith(nodes: list);
     notifyListeners();
     await _persist(force: true);
+  }
+
+  /// Cancels any in-flight generation and waits until it has settled, so the
+  /// conversation is stable before the caller mutates it.
+  Future<void> _interrupt() async {
+    if (!_generating) return;
+    _cancel?.cancel();
+    await whenIdle;
   }
 
   Future<void> selectBranch(int nodeIndex, int branch) async {
@@ -159,6 +187,10 @@ class ChatController extends ChangeNotifier {
   }
 
   void stop() {
+    if (!_generating) return;
+    // Remember that this was an explicit stop: the text received so far stays
+    // on screen and stays in the context sent to the model.
+    _stoppedByUser = true;
     _cancel?.cancel();
     for (final c in _approvals.values) {
       if (!c.isCompleted) c.complete((callId: '', approved: false, reason: 'stopped'));
@@ -284,6 +316,9 @@ class ChatController extends ChangeNotifier {
   Future<void> _generate({String? targetNodeId}) async {
     if (_disposed || _generating) return;
     _generating = true;
+    _epoch++;
+    final epoch = _epoch;
+    _stoppedByUser = false;
     lastError = null;
     final cancel = _cancel = CancelToken();
     final idle = _idle = Completer<void>();
@@ -295,7 +330,7 @@ class ChatController extends ChangeNotifier {
       } catch (e) {
         debugPrint('Unable to start background generation: $e');
       }
-      if (!cancel.isCancelled && !_disposed) await _generateResponse(targetNodeId: targetNodeId);
+      if (!cancel.isCancelled && !_disposed) await _generateResponse(targetNodeId: targetNodeId, epoch: epoch);
     } catch (e) {
       if (!cancel.isCancelled) lastError = '$e';
     } finally {
@@ -313,7 +348,8 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> _generateResponse({String? targetNodeId}) async {
+  Future<void> _generateResponse({String? targetNodeId, required int epoch}) async {
+    bool live() => epoch == _epoch && !_disposed;
     final resolved = resolvedModel;
     if (resolved == null) {
       lastError = t('请先在设置里添加供应商并选择模型', 'Add a provider and pick a model in Settings first');
@@ -393,6 +429,7 @@ class ChatController extends ChangeNotifier {
         );
         acc.usage = const TokenUsage();
         await _streamWithRetry(ai, prompt, params, cancel, acc, (parts) {
+          if (!live()) return;
           msg = msg.copyWith(parts: parts);
           _conv = _conv.upsertMessage(nodeId, msg);
           _scheduleNotify();
@@ -405,6 +442,7 @@ class ChatController extends ChangeNotifier {
         final pending = acc.pendingTools;
         if (pending.isEmpty || cancel.isCancelled) break;
         await _runTools(pending, toolMap, acc, a, cancel, (parts) {
+          if (!live()) return;
           msg = msg.copyWith(parts: parts);
           _conv = _conv.upsertMessage(nodeId, msg);
           _scheduleNotify();
@@ -417,15 +455,30 @@ class ChatController extends ChangeNotifier {
       if (!cancel.isCancelled) lastError = e is ApiException ? e.toString() : '$e';
     } finally {
       acc.closeAll();
-      msg = msg.copyWith(
-        parts: acc.parts,
-        usage: totalUsage.isEmpty ? null : totalUsage,
-        finishedAt: DateTime.now(),
-        error: lastError,
-      );
-      _conv = _conv.upsertMessage(nodeId, msg).copyWith(updatedAt: DateTime.now());
-      await _persist(force: true);
-      if (lastError == null && !cancel.isCancelled && !_disposed) onGenerationDone?.call(_conv, msg);
+      // A superseded stream (edit, regenerate, new turn) must not write back:
+      // its node may already have been replaced by a newer generation.
+      if (live()) {
+        // A stopped turn keeps whatever arrived: the text stays on screen and
+        // in the next prompt, only its `interrupted` flag marks it cut short.
+        // If nothing arrived yet there is nothing to keep, so the placeholder
+        // is dropped instead of leaving an empty bubble in history.
+        final stopped = _stoppedByUser && cancel.isCancelled;
+        final empty = acc.parts.every((p) => p is ReasoningPart || (p is TextPart && p.text.trim().isEmpty));
+        if (stopped && empty) {
+          _conv = _conv.copyWith(nodes: [..._conv.nodes.where((n) => n.id != nodeId)]);
+        } else {
+          msg = msg.copyWith(
+            parts: acc.parts,
+            usage: totalUsage.isEmpty ? null : totalUsage,
+            finishedAt: DateTime.now(),
+            error: stopped ? null : lastError,
+            interrupted: stopped,
+          );
+          _conv = _conv.upsertMessage(nodeId, msg).copyWith(updatedAt: DateTime.now());
+        }
+        await _persist(force: true);
+        if (lastError == null && !cancel.isCancelled) onGenerationDone?.call(_conv, msg);
+      }
     }
   }
 

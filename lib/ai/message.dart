@@ -289,6 +289,7 @@ class ChatMessage {
     this.finishedAt,
     this.error,
     this.translation,
+    this.interrupted = false,
   }) : id = id ?? newId(),
        createdAt = createdAt ?? DateTime.now();
 
@@ -304,6 +305,10 @@ class ChatMessage {
   final DateTime? finishedAt;
   final String? error;
   final String? translation;
+
+  /// True when the user stopped the stream: the visible text is kept as
+  /// history, but the turn was cut short.
+  final bool interrupted;
 
   factory ChatMessage.text(Role role, String text) => ChatMessage(role: role, parts: [TextPart(text)]);
 
@@ -332,6 +337,7 @@ class ChatMessage {
     Object? error = _keep,
     Object? translation = _keep,
     DateTime? createdAt,
+    bool? interrupted,
   }) => ChatMessage(
     id: id,
     role: role,
@@ -343,6 +349,7 @@ class ChatMessage {
     finishedAt: finishedAt ?? this.finishedAt,
     error: identical(error, _keep) ? this.error : error as String?,
     translation: identical(translation, _keep) ? this.translation : translation as String?,
+    interrupted: interrupted ?? this.interrupted,
   );
 
   /// A fresh copy with a new id, used for forking / preset messages.
@@ -354,6 +361,7 @@ class ChatMessage {
     modelName: modelName,
     usage: usage,
     finishedAt: finishedAt,
+    interrupted: interrupted,
   );
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
@@ -371,6 +379,7 @@ class ChatMessage {
     finishedAt: dateFromMsOrNull(j['finishedAt']),
     error: asStrOrNull(j['error']),
     translation: asStrOrNull(j['translation']),
+    interrupted: asBool(j['interrupted']),
   );
 
   Map<String, dynamic> toJson() => {
@@ -384,6 +393,7 @@ class ChatMessage {
     if (finishedAt != null) 'finishedAt': finishedAt!.millisecondsSinceEpoch,
     if (error != null) 'error': error,
     if (translation != null) 'translation': translation,
+    if (interrupted) 'interrupted': true,
   };
 
   String encode() => jsonEncode(toJson());

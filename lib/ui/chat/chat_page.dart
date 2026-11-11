@@ -357,10 +357,12 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     if (result == null) return;
     final (text, resend) = result;
     final parts = [...m.parts.where((p) => p is! TextPart), if (text.trim().isNotEmpty) TextPart(text)];
+    // The message id survives the round trip; an index may not, because a
+    // reply can still be streaming while the editor is open.
     if (resend) {
-      await c.editAndResend(index, parts);
+      await c.editAndResend(m.id, parts);
     } else {
-      await c.editInPlace(index, parts);
+      await c.editInPlace(m.id, parts);
     }
   }
 
