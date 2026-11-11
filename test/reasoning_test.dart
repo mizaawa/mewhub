@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mewhub/ai/provider_config.dart';
+import 'package:mewhub/core/i18n.dart';
 import 'package:mewhub/core/paths.dart';
 import 'package:mewhub/data/assistant.dart';
 import 'package:mewhub/data/settings.dart';
@@ -16,6 +17,11 @@ void main() {
 
   test('UI offers auto through max, without off', () {
     expect(ReasoningLevel.selectable.map((e) => e.effort), ['auto', 'low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  test('levels are shown capitalised while the API keeps lowercase efforts', () {
+    expect(ReasoningLevel.selectable.map((e) => e.displayName), ['Auto', 'Low', 'Medium', 'High', 'XHigh', 'Max']);
+    expect(ReasoningLevel.max.effort, 'max');
   });
 
   test('stored "off" and unknown values load as auto', () {
@@ -100,6 +106,7 @@ void main() {
   });
 
   testWidgets('reasoning sheet slider reports each level', (tester) async {
+    I18n.apply(AppLang.zh);
     final picked = <ReasoningLevel>[];
     await tester.pumpWidget(
       MaterialApp(
@@ -109,9 +116,13 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('xhigh'));
+    for (final label in ['Auto', 'Low', 'Medium', 'High', 'XHigh', 'Max']) {
+      expect(find.text(label), findsOneWidget, reason: 'slider stop "$label" is capitalised');
+    }
+    expect(find.text('xhigh'), findsNothing);
+    await tester.tap(find.text('XHigh'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('auto'));
+    await tester.tap(find.text('Auto'));
     await tester.pumpAndSettle();
     expect(picked, [ReasoningLevel.xhigh, ReasoningLevel.auto]);
     expect(tester.takeException(), isNull);

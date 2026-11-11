@@ -43,14 +43,10 @@
 	<string>MewHub uses the camera to take photos you send to the AI and to scan provider QR codes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>MewHub connects to AI model servers on your local network (for example Ollama or LM Studio) when you configure one.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>MewHub uses the microphone for voice input, so you can speak your message instead of typing it.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>MewHub saves AI-generated images to your photo library when you tap Save.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>MewHub lets you choose photos to attach to a message or use as an avatar or chat background.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>MewHub converts your speech to text for voice input. Audio is processed by Apple speech recognition.</string>
 	<key>UIFileSharingEnabled</key>
 	<false/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

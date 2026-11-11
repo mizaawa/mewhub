@@ -60,8 +60,23 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
   int? _seekIndex;
   ChatController? _bound;
 
+  /// Height of everything docked at the bottom (suggestions + composer).
+  /// The list runs behind the dock and pads its end by this much, so the
+  /// last message still settles right above the input.
+  final _dock = ValueNotifier<double>(0);
+
   double get _readingInset => MediaQuery.paddingOf(context).top + kToolbarHeight + 24;
   bool get _atBottom => _scroll.hasClients && _scroll.position.extentAfter <= 2;
+
+  /// The measured dock, or a close estimate for the very first frame.
+  double _dockInset(double measured) => measured > 0 ? measured : 120 + MediaQuery.paddingOf(context).bottom;
+
+  /// Space after the last message: the dock plus the old breathing room.
+  double get _listEndPadding => _dockInset(_dock.value) + 12;
+
+  void _onDockHeight(double height) {
+    if ((height - _dock.value).abs() > 0.5) _dock.value = height;
+  }
 
   @override
   void initState() {
@@ -77,6 +92,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     _motion.dispose();
     _list.dispose();
     _scroll.dispose();
+    _dock.dispose();
     super.dispose();
   }
 
@@ -282,8 +298,17 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
       if (!mounted || !identical(bound, _bound) || !_scroll.hasClients || !_list.isAttached || !_stickToBottom) return;
       if (!animate) {
         _moving = true;
-        if (_list.numberOfItems > 0) {
-          _list.jumpToItem(index: _list.numberOfItems - 1, scrollController: _scroll, alignment: 1);
+        final count = _list.numberOfItems;
+        if (count > 0) {
+          // Reveal the end padding together with the last message: it now
+          // spans the whole dock, and leaving it to the follow motion would
+          // visibly scroll every freshly opened chat.
+          _list.jumpToItem(
+            index: count - 1,
+            scrollController: _scroll,
+            alignment: 1,
+            rect: Rect.fromLTWH(0, 0, 1, _list.extentForIndex(count - 1).$1 + _listEndPadding),
+          );
         }
         _moving = false;
       }
@@ -448,111 +473,138 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
                   ),
                 ),
               ),
-            Column(
-              children: [
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ShaderMask(
-                        key: const ValueKey('chat-top-fade'),
-                        blendMode: BlendMode.dstIn,
-                        shaderCallback: (bounds) => const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Color(0x26000000), Colors.black],
-                          stops: [0, 0.6, 1],
-                        ).createShader(Rect.fromLTWH(0, 0, bounds.width, math.min(_readingInset, bounds.height))),
-                        child: _messages(context, c, conv),
-                      ),
-                      if (_readingHistory && c.generating)
-                        Positioned(
-                          bottom: 16,
-                          left: 0,
-                          right: 72,
-                          child: Center(
-                            child: StreamingBelow(
-                              key: const ValueKey('streaming-below'),
-                              onTap: () => _scrollToBottom(),
+            Positioned.fill(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ShaderMask(
+                    key: const ValueKey('chat-top-fade'),
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (bounds) => const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Color(0x26000000), Colors.black],
+                      stops: [0, 0.6, 1],
+                    ).createShader(Rect.fromLTWH(0, 0, bounds.width, math.min(_readingInset, bounds.height))),
+                    child: _messages(context, c, conv),
+                  ),
+                  // Floating controls keep clear of the dock as it grows.
+                  ValueListenableBuilder<double>(
+                    valueListenable: _dock,
+                    builder: (context, measured, _) {
+                      final dock = _dockInset(measured);
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (_readingHistory && c.generating)
+                            Positioned(
+                              bottom: dock + 16,
+                              left: 0,
+                              right: 72,
+                              child: Center(
+                                child: StreamingBelow(
+                                  key: const ValueKey('streaming-below'),
+                                  onTap: () => _scrollToBottom(),
+                                ),
+                              ),
+                            ),
+                          Positioned(
+                            right: 16,
+                            bottom: dock + 16,
+                            child: ListenableBuilder(
+                              listenable: _scroll,
+                              builder: (context, _) => ChatNavigation(
+                                visible: _showJump,
+                                onTop: () => _jumpToMessage(0),
+                                onPrevious: _adjacentUser(next: false) == null
+                                    ? null
+                                    : () {
+                                        final index = _adjacentUser(next: false);
+                                        if (index != null) _jumpToMessage(index);
+                                      },
+                                onNext: _adjacentUser(next: true) == null
+                                    ? null
+                                    : () {
+                                        final index = _adjacentUser(next: true);
+                                        if (index != null) _jumpToMessage(index);
+                                      },
+                                onBottom: () => _scrollToBottom(),
+                              ),
                             ),
                           ),
-                        ),
-                      Positioned(
-                        right: 16,
-                        bottom: 16,
-                        child: ListenableBuilder(
-                          listenable: _scroll,
-                          builder: (context, _) => ChatNavigation(
-                            visible: _showJump,
-                            onTop: () => _jumpToMessage(0),
-                            onPrevious: _adjacentUser(next: false) == null
-                                ? null
-                                : () {
-                                    final index = _adjacentUser(next: false);
-                                    if (index != null) _jumpToMessage(index);
-                                  },
-                            onNext: _adjacentUser(next: true) == null
-                                ? null
-                                : () {
-                                    final index = _adjacentUser(next: true);
-                                    if (index != null) _jumpToMessage(index);
-                                  },
-                            onBottom: () => _scrollToBottom(),
-                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _DockMeasure(
+                onHeight: _onDockHeight,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _Suggestions(
+                      items: c.generating ? const [] : conv.suggestions,
+                      onTap: (v) => c.send([TextPart(v)]),
+                    ),
+                    Composer(
+                      key: _composer,
+                      settings: s,
+                      generating: c.generating,
+                      onSend: (parts) async {
+                        _stickToBottom = true;
+                        _scrollToBottom();
+                        await c.send(parts);
+                        if (!mounted) return;
+                        if (c.lastError != null && conv.nodes.isEmpty) toast(this.context, c.lastError!, error: true);
+                        unawaited(app.refreshList());
+                      },
+                      onStop: c.stop,
+                      modelLabel: model?.displayName ?? t('选择模型', 'Pick model'),
+                      providerLabel: resolved?.provider.name ?? '',
+                      onPickModel: () async {
+                        final id = await pickModel(context, selected: model?.id);
+                        if (id == null || id.isEmpty) return;
+                        await c.setModel(id);
+                        // New chats start with the model picked last.
+                        store.update((s) => s.copyWith(lastChatModelId: id));
+                      },
+                      searchEnabled: a.enableWebSearch,
+                      onToggleSearch: () {
+                        final on = !a.enableWebSearch;
+                        store.upsertAssistant(a.copyWith(enableWebSearch: on));
+                        toast(context, on ? t('联网搜索已开启', 'Web search on') : t('联网搜索已关闭', 'Web search off'));
+                      },
+                      reasoning: c.reasoning,
+                      onReasoning: (l) => store.update(
+                        (s) => s.copyWith(
+                          lastReasoning: l,
+                          assistants: [for (final x in s.assistants) x.id == a.id ? x.copyWith(reasoning: l) : x],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                _Suggestions(items: c.generating ? const [] : conv.suggestions, onTap: (v) => c.send([TextPart(v)])),
-                Composer(
-                  key: _composer,
-                  settings: s,
-                  generating: c.generating,
-                  onSend: (parts) async {
-                    _stickToBottom = true;
-                    _scrollToBottom();
-                    await c.send(parts);
-                    if (!mounted) return;
-                    if (c.lastError != null && conv.nodes.isEmpty) toast(this.context, c.lastError!, error: true);
-                    unawaited(app.refreshList());
-                  },
-                  onStop: c.stop,
-                  modelLabel: model?.displayName ?? t('选择模型', 'Pick model'),
-                  providerLabel: resolved?.provider.name ?? '',
-                  onPickModel: () async {
-                    final id = await pickModel(context, selected: model?.id);
-                    if (id == null || id.isEmpty) return;
-                    await c.setModel(id);
-                    // New chats start with the model picked last.
-                    store.update((s) => s.copyWith(lastChatModelId: id));
-                  },
-                  searchEnabled: a.enableWebSearch,
-                  onToggleSearch: () {
-                    final on = !a.enableWebSearch;
-                    store.upsertAssistant(a.copyWith(enableWebSearch: on));
-                    toast(context, on ? t('联网搜索已开启', 'Web search on') : t('联网搜索已关闭', 'Web search off'));
-                  },
-                  reasoning: c.reasoning,
-                  onReasoning: (l) => store.update(
-                    (s) => s.copyWith(
-                      lastReasoning: l,
-                      assistants: [for (final x in s.assistants) x.id == a.id ? x.copyWith(reasoning: l) : x],
+                      supportsReasoning: model?.reasoning ?? false,
+                      supportsVision: model?.vision ?? true,
+                      onCompress: () => _compress(c),
+                      mcpLabel: mcpOverview.compact,
+                      mcpDot: mcpOverview.dot(Theme.of(context).colorScheme),
+                      mcpActive: mcpOverview.active > 0,
+                      onOpenMcp: () => showMcpQuickSheet(context, c),
+                      extensionsLabel: extensions.compact,
+                      extensionsActive: extensions.activeCount,
+                      onOpenExtensions: () => showExtensionsQuickSheet(
+                        context,
+                        c,
+                        onQuickMessage: (v) => _composer.currentState?.setText(v),
+                      ),
                     ),
-                  ),
-                  supportsReasoning: model?.reasoning ?? false,
-                  supportsVision: model?.vision ?? true,
-                  onCompress: () => _compress(c),
-                  mcpLabel: mcpOverview.compact,
-                  mcpDot: mcpOverview.dot(Theme.of(context).colorScheme),
-                  mcpActive: mcpOverview.active > 0,
-                  onOpenMcp: () => showMcpQuickSheet(context, c),
-                  extensionsLabel: extensions.compact,
-                  extensionsActive: extensions.activeCount,
-                  onOpenExtensions: () =>
-                      showExtensionsQuickSheet(context, c, onQuickMessage: (v) => _composer.currentState?.setText(v)),
+                  ],
                 ),
-              ],
+              ),
             ),
           ],
         );
@@ -679,8 +731,12 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
     final app = context.watch<AppState>();
     final s = context.read<SettingsStore>().value;
     if (conv.nodes.isEmpty) {
-      return Padding(
-        padding: EdgeInsets.only(top: _readingInset),
+      return ValueListenableBuilder<double>(
+        valueListenable: _dock,
+        builder: (context, measured, child) => Padding(
+          padding: EdgeInsets.only(top: _readingInset, bottom: _dockInset(measured)),
+          child: child,
+        ),
         child: _Welcome(onPick: (v) => _composer.currentState?.setText(v)),
       );
     }
@@ -694,39 +750,56 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
       },
       child: NotificationListener<ScrollNotification>(
         onNotification: _onScrollNotification,
-        child: SuperListView.builder(
+        child: CustomScrollView(
           key: ValueKey(conv.id),
           controller: _scroll,
-          listController: _list,
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.only(top: _readingInset, bottom: 12),
-          itemCount: nodes.length,
-          findChildIndexCallback: (key) => key is ValueKey<String> ? indices[key.value] : null,
-          itemBuilder: (context, i) {
-            final node = nodes[i];
-            final isLast = i == nodes.length - 1;
-            final streaming = isLast && c.generating && node.role == Role.assistant;
-            final bubble = MessageBubble(
-              key: ValueKey(node.id),
-              node: node,
-              index: i,
-              assistant: c.assistant,
-              display: s.display,
-              streaming: streaming,
-              isLast: isLast,
-              favorite: app.favoriteIds.contains(node.current.id),
-              error: isLast ? c.lastError : null,
-              onAction: (a) => _onAction(c, i, a),
-              onApprove: (id, ok) => c.resolveApproval(id, ok),
-            );
-            final summary = node.current.parts.any((p) => p is TextPart && p.meta?['summary'] == true);
-            final child = summary ? _SummaryDivider(child: bubble) : bubble;
-            // Stable identity keeps expanded code/reasoning state while appending.
-            return KeyedSubtree(
-              key: ValueKey(node.id),
-              child: SizedBox(key: _messageKeys.putIfAbsent(node.id, GlobalKey.new), child: child),
-            );
-          },
+          slivers: [
+            SliverPadding(
+              padding: EdgeInsets.only(top: _readingInset),
+              sliver: SuperSliverList(
+                listController: _list,
+                delegate: SliverChildBuilderDelegate(
+                  childCount: nodes.length,
+                  findChildIndexCallback: (key) => key is ValueKey<String> ? indices[key.value] : null,
+                  (context, i) {
+                    final node = nodes[i];
+                    final isLast = i == nodes.length - 1;
+                    final streaming = isLast && c.generating && node.role == Role.assistant;
+                    final bubble = MessageBubble(
+                      key: ValueKey(node.id),
+                      node: node,
+                      index: i,
+                      assistant: c.assistant,
+                      display: s.display,
+                      streaming: streaming,
+                      isLast: isLast,
+                      favorite: app.favoriteIds.contains(node.current.id),
+                      error: isLast ? c.lastError : null,
+                      onAction: (a) => _onAction(c, i, a),
+                      onApprove: (id, ok) => c.resolveApproval(id, ok),
+                    );
+                    final summary = node.current.parts.any((p) => p is TextPart && p.meta?['summary'] == true);
+                    final child = summary ? _SummaryDivider(child: bubble) : bubble;
+                    // Stable identity keeps expanded code/reasoning state while appending.
+                    return KeyedSubtree(
+                      key: ValueKey(node.id),
+                      child: SizedBox(key: _messageKeys.putIfAbsent(node.id, GlobalKey.new), child: child),
+                    );
+                  },
+                ),
+              ),
+            ),
+            // Room for the dock, which floats over the end of the list. It is a
+            // sliver of its own: resizing it never touches the list's padding,
+            // which message offsets are read from while navigation builds.
+            SliverToBoxAdapter(
+              child: ValueListenableBuilder<double>(
+                valueListenable: _dock,
+                builder: (context, measured, _) => SizedBox(height: _dockInset(measured) + 12),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -780,6 +853,8 @@ class _SummaryDivider extends StatelessWidget {
   }
 }
 
+/// Follow-up suggestions floating just above the composer. The row itself
+/// has no background, so the conversation stays visible between the pills.
 class _Suggestions extends StatelessWidget {
   const _Suggestions({required this.items, required this.onTap});
   final List<String> items;
@@ -794,10 +869,12 @@ class _Suggestions extends StatelessWidget {
       child: items.isEmpty
           ? const SizedBox(width: double.infinity)
           : SizedBox(
-              height: 44,
+              height: 42,
               child: ListView.separated(
+                key: const ValueKey('chat-suggestions'),
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+                padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+                clipBehavior: Clip.none,
                 itemCount: items.length,
                 separatorBuilder: (context, i) => const SizedBox(width: 8),
                 itemBuilder: (context, i) => EntranceFx(
@@ -806,17 +883,25 @@ class _Suggestions extends StatelessWidget {
                   child: Pressable(
                     onTap: () => onTap(items[i]),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: scheme.surfaceContainerLowest,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: scheme.primary.withValues(alpha: 0.25)),
+                        border: Border.all(color: scheme.primary.withValues(alpha: 0.22)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: scheme.shadow.withValues(alpha: 0.08),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.subdirectory_arrow_right_rounded, size: 14, color: scheme.primary),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 5),
                           Text(items[i], style: Theme.of(context).textTheme.labelLarge),
                         ],
                       ),
@@ -826,6 +911,38 @@ class _Suggestions extends StatelessWidget {
               ),
             ),
     );
+  }
+}
+
+/// Reports its child's height after layout, so the list behind the dock can
+/// pad its end by exactly that much.
+class _DockMeasure extends SingleChildRenderObjectWidget {
+  const _DockMeasure({required this.onHeight, required super.child});
+  final ValueChanged<double> onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderDockMeasure(onHeight);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderDockMeasure renderObject) => renderObject.onHeight = onHeight;
+}
+
+class _RenderDockMeasure extends RenderProxyBox {
+  _RenderDockMeasure(this.onHeight);
+  ValueChanged<double> onHeight;
+  double? _reported;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final height = size.height;
+    if (height == _reported) return;
+    _reported = height;
+    // Layout cannot rebuild widgets; hand the size over right after this frame.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      final latest = _reported;
+      if (attached && latest != null) onHeight(latest);
+    });
   }
 }
 

@@ -47,19 +47,13 @@ void main() {
         return [source.path, source.path];
       },
     );
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('plugin.csdcorp.com/speech_to_text'),
-      (_) async => null,
-    );
   });
 
   tearDown(() async {
-    for (final name in ['plugins.flutter.io/image_picker', 'plugin.csdcorp.com/speech_to_text']) {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-        MethodChannel(name),
-        null,
-      );
-    }
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/image_picker'),
+      null,
+    );
     await sandbox.delete(recursive: true);
   });
 
@@ -94,22 +88,29 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// The editor is ready once the photo is decoded and its canvas is shown.
+  bool editorReady() => find.byKey(const ValueKey('image-editor-canvas')).evaluate().isNotEmpty;
+
   Future<void> capture(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
     await tester.runAsync(() => tester.tap(find.text('拍照')));
-    await _waitUntil(tester, () => find.text('编辑图片').evaluate().isNotEmpty);
+    await _waitUntil(tester, editorReady);
   }
 
   Future<void> chooseGallery(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
     await tester.runAsync(() => tester.tap(find.text('相册')));
-    await _waitUntil(tester, () => find.byKey(const ValueKey('composer-photo-editor-0')).evaluate().isNotEmpty);
+    await _waitUntil(
+      tester,
+      () => find.byKey(const ValueKey('composer-photo-editor-0')).evaluate().isNotEmpty && editorReady(),
+    );
   }
 
   Future<void> confirmPhoto(WidgetTester tester) async {
-    await tester.runAsync(() => tester.tap(find.text('确认')));
+    await _waitUntil(tester, editorReady);
+    await tester.runAsync(() => tester.tap(find.byKey(const ValueKey('image-editor-confirm'))));
     await tester.pump();
   }
 
@@ -136,9 +137,9 @@ void main() {
       ),
       findsNothing,
     );
-    await tester.tap(find.byIcon(Icons.rotate_right_rounded));
+    await tester.tap(find.byKey(const ValueKey('image-editor-rotate')));
     await tester.pumpAndSettle();
-    await tester.runAsync(() => tester.tap(find.text('确认')));
+    await tester.runAsync(() => tester.tap(find.byKey(const ValueKey('image-editor-confirm'))));
     await _waitUntil(
       tester,
       () =>
@@ -173,7 +174,7 @@ void main() {
     await showComposer(tester);
     await tester.enterText(find.byType(TextField), 'draft');
     await capture(tester);
-    await tester.runAsync(() => tester.tap(find.byIcon(Icons.arrow_back_rounded)));
+    await tester.runAsync(() => tester.tap(find.byKey(const ValueKey('image-editor-close'))));
     await _waitUntil(tester, () => find.byType(Composer).evaluate().isNotEmpty && AppPaths.files.listSync().isEmpty);
     expect(sent, isEmpty);
     expect(find.descendant(of: find.byType(Composer), matching: find.byType(Image)), findsNothing);
@@ -223,7 +224,7 @@ void main() {
     await chooseGallery(tester);
     await confirmPhoto(tester);
     await _waitUntil(tester, () => find.byKey(const ValueKey('composer-photo-editor-1')).evaluate().isNotEmpty);
-    await tester.runAsync(() => tester.tap(find.byIcon(Icons.arrow_back_rounded)));
+    await tester.runAsync(() => tester.tap(find.byKey(const ValueKey('image-editor-close'))));
     await _waitUntil(
       tester,
       () =>

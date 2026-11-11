@@ -3,8 +3,6 @@
 
     <!-- Network access for the AI providers you configure. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Voice input (speech-to-text). Requested only when you tap the mic. -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Photo / QR scanning. Requested only when you use the camera. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- "Reply finished" notifications; requested only when enabled in settings. -->
@@ -18,7 +16,6 @@
         android:maxSdkVersion="28" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:label="MewHub"
@@ -76,10 +73,7 @@
             <action android:name="android.intent.action.SENDTO" />
             <data android:scheme="mailto" />
         </intent>
-        <!-- System speech recognizer and TTS engine. -->
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
+        <!-- System TTS engine for reading replies aloud. -->
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>

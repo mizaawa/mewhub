@@ -107,6 +107,62 @@ void main() {
     });
   }
 
+  for (final dark in [false, true]) {
+    testWidgets('pressing a tool or reasoning card keeps the tinted ink inside its rounded card, dark=$dark', (
+      tester,
+    ) async {
+      final theme = dark ? MewTheme.dark(0) : MewTheme.light(0);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: ListView(
+              padding: const EdgeInsets.all(12),
+              children: [
+                const ToolCard(
+                  part: ToolPart(
+                    callId: 'search',
+                    name: 'search_web',
+                    input: '{"query":"GPT-6.2 Astra API pricing"}',
+                    output: '{}',
+                  ),
+                ),
+                ReasoningCard(
+                  part: ReasoningPart(
+                    '想一想',
+                    startedAt: DateTime(2026, 11, 12),
+                    finishedAt: DateTime(2026, 11, 12, 0, 0, 3),
+                  ),
+                  streaming: false,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final card in [find.byType(ToolCard), find.byType(ReasoningCard)]) {
+        final ink = find.descendant(of: card, matching: find.byType(InkWell)).first;
+        // The ink lands on a transparent Material inside the card's clip, not
+        // on the page's Material underneath (which drew a grey rectangle
+        // around the rounded corners).
+        final material = find.ancestor(of: ink, matching: find.byType(Material)).first;
+        expect(find.descendant(of: card, matching: find.byWidget(tester.widget(material))), findsOneWidget);
+        expect(tester.widget<Material>(material).type, MaterialType.transparency);
+        final clip = find.ancestor(of: material, matching: find.byType(ClipPath)).first;
+        expect(find.descendant(of: card, matching: find.byWidget(tester.widget(clip))), findsOneWidget);
+      }
+      // Press feedback uses the accent instead of Material's neutral grey.
+      expect(theme.highlightColor.withValues(alpha: 1), theme.colorScheme.primary.withValues(alpha: 1));
+      expect(theme.splashColor.withValues(alpha: 1), theme.colorScheme.primary.withValues(alpha: 1));
+      final gesture = await tester.startGesture(tester.getCenter(find.textContaining('联网搜索')));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.takeException(), isNull);
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+  }
+
   testWidgets('code aliases, nested blocks and math keep their own transparent wrapper', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

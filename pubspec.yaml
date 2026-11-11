@@ -2,7 +2,7 @@ name: mewhub
 description: "MewHub - an elegant multi-provider AI chat client for Android & iOS."
 publish_to: 'none'
 
-version: 1.5.1+10501
+version: 1.6.0+10600
 
 environment:
   sdk: ^3.13.0
@@ -45,7 +45,6 @@ dependencies:
   url_launcher: ^6.3.3
   mobile_scanner: ^7.5.0
   flutter_tts: ^4.2.5
-  speech_to_text: ^7.5.0
   gal: ^2.3.3
   package_info_plus: ^10.2.2
   battery_plus: ^7.1.2

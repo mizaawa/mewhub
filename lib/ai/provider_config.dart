@@ -31,6 +31,13 @@ enum ReasoningLevel {
   final int budget;
   final String effort;
 
+  /// Capitalised effort for labels in the UI: Auto, Low, Medium, High,
+  /// XHigh, Max. [effort] stays lowercase because it is the API value.
+  String get displayName => switch (this) {
+    xhigh => 'XHigh',
+    _ => '${effort[0].toUpperCase()}${effort.substring(1)}',
+  };
+
   bool get enabled => this != off;
 
   /// Levels offered in the UI, weakest to strongest. [off] is internal only

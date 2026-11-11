@@ -339,8 +339,17 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
           title: t('采样', 'Sampling'),
           children: [
             _SliderTile(
+              key: const ValueKey('assistant-temperature'),
               icon: Icons.thermostat_rounded,
               title: 'Temperature',
+              description: t(
+                '控制回答的随机程度。调低（0～0.5）更稳定、严谨，适合写代码、翻译和查资料；'
+                    '调高（1 以上）更发散、有创意，适合写作和头脑风暴，但也更容易跑题。'
+                    '关闭开关则使用模型自己的默认值。',
+                'How random the replies are. Lower (0–0.5) is steadier and more precise, good for code, '
+                    'translation and facts; higher (above 1) is more varied and creative, good for writing and '
+                    'brainstorming, but drifts off topic more easily. Switch it off to use the model default.',
+              ),
               label: fmt(_a.temperature),
               enabled: _a.temperature != null,
               value: _a.temperature ?? 0.7,
@@ -350,8 +359,16 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
               onChanged: (v) => _save(_a.copyWith(temperature: double.parse(v.toStringAsFixed(2)))),
             ),
             _SliderTile(
+              key: const ValueKey('assistant-top-p'),
               icon: Icons.filter_alt_outlined,
               title: 'Top P',
+              description: t(
+                '核采样：每写一个词，只在概率加起来排前 P 的候选词里挑。数值越小用词越保守、集中，'
+                    '1 表示不做限制。通常只调 Temperature 和 Top P 其中一个，另一个保持默认即可。',
+                'Nucleus sampling: each word is picked only from the most likely candidates whose '
+                    'probabilities add up to P. Smaller values keep the wording safer and more focused; 1 means '
+                    'no limit. Usually tune either Temperature or Top P and leave the other at its default.',
+              ),
               label: fmt(_a.topP),
               enabled: _a.topP != null,
               value: _a.topP ?? 1,
@@ -701,6 +718,7 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
 
 class _SliderTile extends StatelessWidget {
   const _SliderTile({
+    super.key,
     required this.icon,
     required this.title,
     required this.label,
@@ -709,6 +727,7 @@ class _SliderTile extends StatelessWidget {
     required this.min,
     required this.max,
     required this.onChanged,
+    this.description,
     this.onToggle,
   });
   final IconData icon;
@@ -719,35 +738,52 @@ class _SliderTile extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double> onChanged;
+
+  /// What the parameter does, shown under the title for people who have
+  /// never met it before.
+  final String? description;
   final ValueChanged<bool>? onToggle;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
-    child: Column(
-      children: [
-        Row(
-          children: [
-            IconBadge(icon),
-            const SizedBox(width: 16),
-            Expanded(child: Text(title, style: Theme.of(context).textTheme.bodyLarge)),
-            Text(label, style: Theme.of(context).textTheme.labelLarge),
-            if (onToggle != null) Switch(value: enabled, onChanged: onToggle),
-          ],
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 240),
-          child: enabled
-              ? Slider(
-                  value: value.clamp(min, max),
-                  min: min,
-                  max: max,
-                  divisions: ((max - min) * 20).round(),
-                  onChanged: onChanged,
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              IconBadge(icon),
+              const SizedBox(width: 16),
+              Expanded(child: Text(title, style: tt.bodyLarge)),
+              Text(label, style: tt.labelLarge?.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+              if (onToggle != null) Switch(value: enabled, onChanged: onToggle),
+            ],
+          ),
+          if (description != null)
+            Padding(
+              // Lines up with the title, past the icon badge.
+              padding: const EdgeInsets.fromLTRB(50, 2, 8, 2),
+              child: Text(description!, style: tt.bodySmall?.copyWith(color: scheme.onSurfaceVariant, height: 1.45)),
+            ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: enabled
+                ? Slider(
+                    value: value.clamp(min, max),
+                    min: min,
+                    max: max,
+                    divisions: ((max - min) * 20).round(),
+                    onChanged: onChanged,
+                  )
+                : const SizedBox(width: double.infinity, height: 6),
+          ),
+        ],
+      ),
+    );
+  }
 }

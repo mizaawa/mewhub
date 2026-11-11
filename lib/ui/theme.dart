@@ -68,6 +68,12 @@ class MewTheme {
       brightness: b,
       scaffoldBackgroundColor: scheme.surface,
       splashFactory: InkSparkle.splashFactory,
+      // Press feedback tinted with the accent instead of Material's neutral
+      // grey, so ripples and highlights belong to the milk / caramel palette.
+      splashColor: scheme.primary.withValues(alpha: dark ? 0.18 : 0.12),
+      highlightColor: scheme.primary.withValues(alpha: dark ? 0.12 : 0.08),
+      hoverColor: scheme.primary.withValues(alpha: 0.05),
+      focusColor: scheme.primary.withValues(alpha: 0.10),
     );
     final text = base.textTheme.apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
     final r14 = BorderRadius.circular(14);

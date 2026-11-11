@@ -122,4 +122,33 @@ void main() {
     final sendX = tester.getCenter(find.byIcon(Icons.arrow_upward_rounded)).dx;
     expect((expandX - sendX).abs(), lessThanOrEqualTo(1));
   });
+
+  testWidgets('model and reasoning sit in the input row, with no voice button', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: MewTheme.light(0),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: _composer(onSend: (_) async {}),
+          ),
+        ),
+      ),
+    );
+    final input = find.byKey(const ValueKey('composer-input'));
+    final model = find.byKey(const ValueKey('composer-model-chip'));
+    final reasoning = find.byWidgetPredicate((w) => w is Tooltip && w.message == '思考强度');
+    expect(find.descendant(of: input, matching: model), findsOneWidget);
+    expect(find.descendant(of: input, matching: reasoning), findsOneWidget);
+    // One action row: model, reasoning and send share a line under the text.
+    final send = tester.getCenter(find.byIcon(Icons.arrow_upward_rounded));
+    expect((tester.getCenter(model).dy - send.dy).abs(), lessThan(1));
+    expect((tester.getCenter(reasoning).dy - send.dy).abs(), lessThan(1));
+    expect(tester.getRect(model).top, greaterThan(tester.getRect(find.byType(TextField)).bottom - 1));
+    for (final icon in [Icons.mic_none_rounded, Icons.mic_rounded, Icons.graphic_eq_rounded]) {
+      expect(find.byIcon(icon), findsNothing);
+    }
+    expect(find.byTooltip('语音输入'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

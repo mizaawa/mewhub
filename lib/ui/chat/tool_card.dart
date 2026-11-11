@@ -142,20 +142,29 @@ class _ToolCardState extends State<ToolCard> {
       padding: const EdgeInsets.only(bottom: 8),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        decoration: BoxDecoration(color: scheme.surfaceContainerLow, borderRadius: BorderRadius.circular(16)),
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: running ? 0.08 : 0.05),
+          borderRadius: BorderRadius.circular(16),
+        ),
         clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            header,
-            if (p.pending) _approvalBar(context),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 260),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: _open ? details : const SizedBox(width: double.infinity),
-            ),
-          ],
+        // Ink is painted on the nearest Material. Without one inside the
+        // clip it landed on the page below the card and showed up as a grey
+        // rectangle around the rounded corners.
+        child: Material(
+          type: MaterialType.transparency,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              if (p.pending) _approvalBar(context),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: _open ? details : const SizedBox(width: double.infinity),
+              ),
+            ],
+          ),
         ),
       ),
     );

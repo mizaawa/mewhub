@@ -1,9 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../ai/message.dart';
 import '../../ai/provider_config.dart';
@@ -80,14 +79,12 @@ class ComposerState extends State<Composer> {
   final List<Part> _attachments = [];
   bool _busy = false;
   bool _toolsOpen = false;
-  final SpeechToText _stt = SpeechToText();
-  bool _listening = false;
-  String _sttBase = '';
 
   @override
   void initState() {
     super.initState();
     _text.addListener(_onChanged);
+    _focus.addListener(_onChanged);
   }
 
   void _onChanged() => setState(() {});
@@ -105,10 +102,8 @@ class ComposerState extends State<Composer> {
   void dispose() {
     _text.removeListener(_onChanged);
     if (widget.controller == null) _text.dispose();
+    _focus.removeListener(_onChanged);
     _focus.dispose();
-    if (_stt.statusListener == _onSttStatus) _stt.statusListener = null;
-    if (_stt.errorListener == _onSttError) _stt.errorListener = null;
-    _stt.cancel();
     super.dispose();
   }
 
@@ -120,7 +115,6 @@ class ComposerState extends State<Composer> {
       return;
     }
     if (!_canSend) return;
-    if (_listening) await _stopListening();
     final text = _text.text.trim();
     final parts = <Part>[..._attachments];
     final d = widget.settings.display;
@@ -175,6 +169,8 @@ class ComposerState extends State<Composer> {
         if (!mounted) break;
         final edited = await Navigator.of(context).push<String>(
           MaterialPageRoute(
+            // A dialog route: no edge back-swipe while a corner is dragged.
+            fullscreenDialog: true,
             builder: (_) => ImageEditorPage(key: ValueKey('composer-photo-editor-$i'), imageUrl: photos[i].url),
           ),
         );
@@ -204,52 +200,6 @@ class ComposerState extends State<Composer> {
         if (mounted) setState(() => _busy = false);
       }
     }
-  }
-
-  Future<void> _toggleListening() async {
-    if (_listening) return _stopListening();
-    try {
-      final ok = await _stt.initialize(onStatus: _onSttStatus, onError: _onSttError);
-      if (!ok) {
-        if (mounted) toast(context, t('语音识别不可用或未授权', 'Speech recognition unavailable or not permitted'), error: true);
-        return;
-      }
-      // SpeechToText is a singleton and initialize() keeps the listeners from
-      // its first call, so a recreated composer must re-register its own.
-      _stt.statusListener = _onSttStatus;
-      _stt.errorListener = _onSttError;
-      _sttBase = _text.text.isEmpty ? '' : '${_text.text} ';
-      setState(() => _listening = true);
-      await _stt.listen(
-        onResult: (r) => setText('$_sttBase${r.recognizedWords}', focus: false),
-        listenOptions: SpeechListenOptions(
-          partialResults: true,
-          listenMode: ListenMode.dictation,
-          autoPunctuation: true,
-          pauseFor: const Duration(seconds: 4),
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() => _listening = false);
-        toast(context, '$e', error: true);
-      }
-    }
-  }
-
-  void _onSttStatus(String s) {
-    if ((s == 'done' || s == 'notListening') && mounted) setState(() => _listening = false);
-  }
-
-  void _onSttError(SpeechRecognitionError e) {
-    if (!mounted) return;
-    setState(() => _listening = false);
-    toast(context, e.errorMsg, error: true);
-  }
-
-  Future<void> _stopListening() async {
-    await _stt.stop();
-    if (mounted) setState(() => _listening = false);
   }
 
   Future<void> _openFullEditor() async {
@@ -297,146 +247,143 @@ class ComposerState extends State<Composer> {
     final scheme = Theme.of(context).colorScheme;
     final s = widget.settings;
     final bottom = MediaQuery.paddingOf(context).bottom;
-    return Container(
-      padding: EdgeInsets.fromLTRB(10, 6, 10, 8 + bottom),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [scheme.surface.withValues(alpha: 0), scheme.surface.withValues(alpha: 0.92), scheme.surface],
-          stops: const [0, 0.25, 1],
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedSize(
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeOutCubic,
-            child: _attachments.isEmpty ? const SizedBox(width: double.infinity) : _attachmentTray(context),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-            child: _toolsOpen ? _toolsPanel(context) : const SizedBox(width: double.infinity),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _ModelChip(
-                      model: widget.modelLabel,
-                      provider: widget.providerLabel,
-                      onTap: widget.onPickModel,
-                    ),
+    final focused = _focus.hasFocus;
+    // The chat list runs behind the composer (as in RikkaHub): it fades out
+    // over the input card and is solid only under its lower half and the
+    // gesture bar, instead of a solid band that used to eat a third of the
+    // screen.
+    return CustomPaint(
+      painter: _ComposerScrim(color: scheme.surface, solidHeight: bottom + 8 + 46),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(10, 6, 10, 8 + bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedSize(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              child: _toolsOpen ? _toolsPanel(context) : const SizedBox(width: double.infinity),
+            ),
+            AnimatedContainer(
+              key: const ValueKey('composer-input'),
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLowest,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: focused ? scheme.primary.withValues(alpha: 0.45) : scheme.outlineVariant),
+                boxShadow: [
+                  BoxShadow(
+                    color: scheme.shadow.withValues(alpha: focused ? 0.09 : 0.06),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6),
                   ),
-                ),
-                if (widget.supportsReasoning) ...[
-                  const SizedBox(width: 8),
-                  _ReasoningChip(level: widget.reasoning, onTap: _reasoningSheet),
                 ],
-              ],
-            ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(26),
-              border: Border.all(
-                color: _focus.hasFocus ? scheme.primary.withValues(alpha: 0.45) : scheme.outlineVariant,
               ),
-              boxShadow: [
-                BoxShadow(color: scheme.shadow.withValues(alpha: 0.07), blurRadius: 24, offset: const Offset(0, 8)),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 11, 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _text,
-                          focusNode: _focus,
-                          minLines: 1,
-                          maxLines: 7,
-                          textInputAction: s.display.sendOnEnter ? TextInputAction.send : TextInputAction.newline,
-                          onSubmitted: s.display.sendOnEnter ? (_) => _send() : null,
-                          style: TextStyle(fontSize: 15.5 * s.display.fontScale, height: 1.45),
-                          decoration: InputDecoration(
-                            hintText: _listening ? t('正在聆听…', 'Listening…') : t('和 MewBot 说点什么…', 'Message MewBot…'),
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            filled: false,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: _attachments.isEmpty ? const SizedBox(width: double.infinity) : _attachmentTray(context),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 2, 11, 0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _text,
+                            focusNode: _focus,
+                            minLines: 1,
+                            maxLines: 7,
+                            textInputAction: s.display.sendOnEnter ? TextInputAction.send : TextInputAction.newline,
+                            onSubmitted: s.display.sendOnEnter ? (_) => _send() : null,
+                            style: TextStyle(fontSize: 15.5 * s.display.fontScale, height: 1.45),
+                            decoration: InputDecoration(
+                              hintText: t('和 MewBot 说点什么…', 'Message MewBot…'),
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              filled: false,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
                           ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: _ExpandButton(onTap: _openFullEditor),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-                  child: Row(
-                    children: [
-                      _RoundIcon(
-                        icon: Icons.add_rounded,
-                        onTap: () => setState(() => _toolsOpen = !_toolsOpen),
-                        rotate: _toolsOpen,
-                        tooltip: _toolsOpen ? t('收起工具', 'Close tools') : t('展开工具', 'Open tools'),
-                      ),
-                      const SizedBox(width: 2),
-                      _RoundIcon(
-                        icon: Icons.travel_explore_rounded,
-                        active: widget.searchEnabled,
-                        onTap: widget.onToggleSearch,
-                        tooltip: t('联网搜索', 'Web search'),
-                      ),
-                      const Spacer(),
-                      if (!widget.generating && _text.text.isEmpty && _attachments.isEmpty)
-                        _RoundIcon(
-                          icon: _listening ? Icons.graphic_eq_rounded : Icons.mic_none_rounded,
-                          active: _listening,
-                          onTap: _toggleListening,
-                          tooltip: t('语音输入', 'Voice input'),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: _ExpandButton(onTap: _openFullEditor),
                         ),
-                      const SizedBox(width: 4),
-                      _SendButton(
-                        generating: widget.generating,
-                        enabled: widget.generating || _canSend,
-                        busy: _busy,
-                        onTap: _send,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+                    child: Row(
+                      children: [
+                        _RoundIcon(
+                          icon: Icons.add_rounded,
+                          onTap: () => setState(() => _toolsOpen = !_toolsOpen),
+                          rotate: _toolsOpen,
+                          tooltip: _toolsOpen ? t('收起工具', 'Close tools') : t('展开工具', 'Open tools'),
+                        ),
+                        const SizedBox(width: 2),
+                        _RoundIcon(
+                          icon: Icons.travel_explore_rounded,
+                          active: widget.searchEnabled,
+                          onTap: widget.onToggleSearch,
+                          tooltip: t('联网搜索', 'Web search'),
+                        ),
+                        const SizedBox(width: 4),
+                        // Model and reasoning live in the input's own action
+                        // row now, so they no longer cost a separate line.
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: _ModelChip(
+                                  model: widget.modelLabel,
+                                  provider: widget.providerLabel,
+                                  onTap: widget.onPickModel,
+                                ),
+                              ),
+                              if (widget.supportsReasoning) ...[
+                                const SizedBox(width: 6),
+                                _ReasoningChip(level: widget.reasoning, onTap: _reasoningSheet),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _SendButton(
+                          generating: widget.generating,
+                          enabled: widget.generating || _canSend,
+                          busy: _busy,
+                          onTap: _send,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
+  /// Pending attachments, shown inside the input card above the text.
   Widget _attachmentTray(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      height: 82,
-      margin: const EdgeInsets.only(bottom: 8),
+    return SizedBox(
+      height: 80,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
         itemCount: _attachments.length,
         separatorBuilder: (context, i) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
@@ -444,29 +391,26 @@ class ComposerState extends State<Composer> {
           final Widget content;
           if (a is ImagePart) {
             content = ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image(image: imageProviderFor(a.url), width: 82, height: 82, fit: BoxFit.cover),
+              borderRadius: BorderRadius.circular(14),
+              child: Image(image: imageProviderFor(a.url), width: 64, height: 64, fit: BoxFit.cover),
             );
           } else {
             final name = a is DocumentPart ? a.fileName : 'file';
             content = Container(
-              width: 140,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: scheme.outlineVariant),
-              ),
+              width: 128,
+              height: 64,
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              decoration: BoxDecoration(color: scheme.surfaceContainerHigh, borderRadius: BorderRadius.circular(14)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.description_outlined, color: scheme.primary),
+                  Icon(Icons.description_outlined, size: 18, color: scheme.primary),
                   const Spacer(),
                   Text(
                     name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(height: 1.2),
                   ),
                 ],
               ),
@@ -485,8 +429,12 @@ class ComposerState extends State<Composer> {
                     onTap: () => setState(() => _attachments.removeAt(i)),
                     child: Container(
                       padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(color: scheme.inverseSurface, shape: BoxShape.circle),
-                      child: Icon(Icons.close_rounded, size: 13, color: scheme.onInverseSurface),
+                      decoration: BoxDecoration(
+                        color: scheme.inverseSurface,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: scheme.surfaceContainerLowest, width: 1.5),
+                      ),
+                      child: Icon(Icons.close_rounded, size: 12, color: scheme.onInverseSurface),
                     ),
                   ),
                 ),
@@ -587,6 +535,38 @@ class ComposerState extends State<Composer> {
   }
 }
 
+/// Fades the conversation out behind the composer: clear at the top, then
+/// solid for the bottom [solidHeight], so nothing shows through around the
+/// lower half of the input card or under the gesture bar.
+class _ComposerScrim extends CustomPainter {
+  const _ComposerScrim({required this.color, required this.solidHeight});
+  final Color color;
+  final double solidHeight;
+
+  static const _fade = 64.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final solidTop = (size.height - solidHeight).clamp(0.0, size.height);
+    final fadeTop = math.max(0.0, solidTop - _fade);
+    canvas.drawRect(
+      Rect.fromLTRB(0, fadeTop, size.width, size.height),
+      Paint()
+        // Clamped: everything below solidTop takes the solid end colour.
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [color.withValues(alpha: 0), color.withValues(alpha: 0.9), color],
+          stops: const [0, 0.6, 1],
+        ).createShader(Rect.fromLTRB(0, fadeTop, size.width, math.max(solidTop, fadeTop + 1))),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ComposerScrim oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.solidHeight != solidHeight;
+}
+
 class _RoundIcon extends StatelessWidget {
   const _RoundIcon({required this.icon, required this.onTap, this.active = false, this.tooltip, this.rotate = false});
   final IconData icon;
@@ -608,7 +588,8 @@ class _RoundIcon extends StatelessWidget {
         height: 36,
         decoration: BoxDecoration(
           color: active ? scheme.primary.withValues(alpha: 0.15) : Colors.transparent,
-          borderRadius: BorderRadius.circular(13),
+          // Round, like the model and reasoning pills next to it.
+          borderRadius: BorderRadius.circular(18),
         ),
         child: AnimatedRotation(
           turns: rotate ? 0.125 : 0,
@@ -625,8 +606,9 @@ class _RoundIcon extends StatelessWidget {
   }
 }
 
-/// Current model, shown on its own row above the input so long names fit.
-/// Very long ids scale down a little before they are ellipsized.
+/// Current model, a compact pill in the input's action row. The provider is
+/// added when there is room; very long ids scale down a little before they
+/// are ellipsized (the app bar still shows the full name).
 class _ModelChip extends StatelessWidget {
   const _ModelChip({required this.model, required this.provider, required this.onTap});
   final String model;
@@ -637,55 +619,64 @@ class _ModelChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    return Pressable(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(6, 5, 8, 5),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLowest.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: scheme.outlineVariant),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AvatarView(value: '', fallback: model, size: 22),
-            const SizedBox(width: 7),
-            Flexible(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                child: LayoutBuilder(
-                  key: ValueKey('$model|$provider'),
-                  builder: (context, box) {
-                    final style = tt.labelLarge?.copyWith(fontWeight: FontWeight.w600, color: scheme.onSurface);
-                    final painter = TextPainter(
-                      text: TextSpan(text: model, style: style),
-                      maxLines: 1,
-                      textDirection: TextDirection.ltr,
-                      textScaler: MediaQuery.textScalerOf(context),
-                    )..layout();
-                    final shrink = painter.width > box.maxWidth;
-                    return Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(text: model, style: shrink ? style?.copyWith(fontSize: 12.5) : style),
-                          if (provider.isNotEmpty && !shrink)
-                            TextSpan(
-                              text: '  $provider',
-                              style: tt.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
-                            ),
-                        ],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    );
-                  },
+    return Semantics(
+      button: true,
+      label: t('切换模型', 'Switch model'),
+      child: Pressable(
+        onTap: onTap,
+        scale: 0.95,
+        child: Container(
+          key: const ValueKey('composer-model-chip'),
+          height: 32,
+          padding: const EdgeInsets.fromLTRB(4, 0, 5, 0),
+          decoration: BoxDecoration(color: scheme.surfaceContainerHigh, borderRadius: BorderRadius.circular(16)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AvatarView(value: '', fallback: model, size: 22),
+              const SizedBox(width: 6),
+              Flexible(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: LayoutBuilder(
+                    key: ValueKey('$model|$provider'),
+                    builder: (context, box) {
+                      final style = tt.labelLarge?.copyWith(fontWeight: FontWeight.w600, color: scheme.onSurface);
+                      final providerStyle = tt.labelSmall?.copyWith(color: scheme.onSurfaceVariant);
+                      double width(String text, TextStyle? style) {
+                        final painter = TextPainter(
+                          text: TextSpan(text: text, style: style),
+                          maxLines: 1,
+                          textDirection: TextDirection.ltr,
+                          textScaler: MediaQuery.textScalerOf(context),
+                        )..layout();
+                        final w = painter.width;
+                        painter.dispose();
+                        return w;
+                      }
+
+                      final modelWidth = width(model, style);
+                      final shrink = modelWidth > box.maxWidth;
+                      final withProvider =
+                          provider.isNotEmpty && modelWidth + width('  $provider', providerStyle) <= box.maxWidth;
+                      return Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(text: model, style: shrink ? style?.copyWith(fontSize: 12.5) : style),
+                            if (withProvider) TextSpan(text: '  $provider', style: providerStyle),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 2),
-            Icon(Icons.unfold_more_rounded, size: 16, color: scheme.onSurfaceVariant),
-          ],
+              const SizedBox(width: 1),
+              Icon(Icons.unfold_more_rounded, size: 15, color: scheme.onSurfaceVariant),
+            ],
+          ),
         ),
       ),
     );
@@ -704,21 +695,29 @@ class _ReasoningChip extends StatelessWidget {
       message: t('思考强度', 'Reasoning effort'),
       child: Pressable(
         onTap: onTap,
+        scale: 0.95,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
-          decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(14)),
+          height: 32,
+          padding: const EdgeInsets.fromLTRB(7, 0, 10, 0),
+          decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(16)),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.psychology_alt_rounded, size: 16, color: scheme.primary),
               const SizedBox(width: 4),
-              AnimatedSwitcher(
+              // The pill eases to the new label's width while the labels fade.
+              AnimatedSize(
                 duration: const Duration(milliseconds: 200),
-                child: Text(
-                  reasoningLabel(level),
-                  key: ValueKey(level),
-                  style: Theme.of(context).textTheme.labelMedium
-                      ?.copyWith(color: scheme.onSecondaryContainer, fontWeight: FontWeight.w600),
+                curve: Curves.easeOutCubic,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(
+                    reasoningLabel(level),
+                    key: ValueKey(level),
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(color: scheme.onSecondaryContainer, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
             ],
@@ -840,7 +839,7 @@ class _ReasoningSheetState extends State<ReasoningSheet> {
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            _levels[i].effort,
+                            _levels[i].displayName,
                             style: tt.labelMedium?.copyWith(
                               color: i == _i ? scheme.primary : scheme.onSurfaceVariant,
                               fontWeight: i == _i ? FontWeight.w800 : FontWeight.w500,

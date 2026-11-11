@@ -322,7 +322,7 @@ class MessageBubble extends StatelessWidget {
 
   Widget _footer(BuildContext context, {required bool alignEnd}) {
     final scheme = Theme.of(context).colorScheme;
-    if (streaming) return const SizedBox(height: 4);
+    if (streaming) return const _FooterReveal(child: null);
     final branches = node.messages.length;
     final usage = m.usage;
     final mute = Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant);
@@ -366,8 +366,7 @@ class MessageBubble extends StatelessWidget {
         ),
       ],
     ];
-    return EntranceFx(
-      dy: 4,
+    return _FooterReveal(
       child: Padding(
         padding: const EdgeInsets.only(top: 4),
         child: Row(mainAxisAlignment: alignEnd ? MainAxisAlignment.end : MainAxisAlignment.start, children: items),
@@ -411,6 +410,64 @@ class MessageBubble extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Message actions under a bubble. They fade up once, at the moment a reply
+/// finishes streaming; messages that scroll back into view (or are opened
+/// from history) show them straight away instead of replaying the entrance.
+class _FooterReveal extends StatefulWidget {
+  const _FooterReveal({required this.child});
+
+  /// Null while the reply is still streaming: a small gap is kept instead.
+  final Widget? child;
+
+  @override
+  State<_FooterReveal> createState() => _FooterRevealState();
+}
+
+class _FooterRevealState extends State<_FooterReveal> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 380),
+    value: widget.child == null ? 0 : 1,
+  );
+
+  @override
+  void didUpdateWidget(_FooterReveal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.child == null && widget.child != null) {
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _c.value = 1;
+      } else {
+        _c.forward(from: 0);
+      }
+    } else if (widget.child == null) {
+      _c.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = widget.child;
+    if (child == null) return const SizedBox(height: 4);
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) {
+        final v = Curves.easeOutCubic.transform(_c.value);
+        return Opacity(
+          opacity: v,
+          child: Transform.translate(offset: Offset(0, (1 - v) * 4), child: child),
+        );
+      },
+      child: child,
     );
   }
 }

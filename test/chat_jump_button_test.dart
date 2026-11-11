@@ -14,6 +14,7 @@ import 'package:mewhub/state/settings_store.dart';
 import 'package:mewhub/state/tts.dart';
 import 'package:mewhub/ui/chat/chat_page.dart';
 import 'package:mewhub/ui/chat/composer.dart';
+import 'package:mewhub/ui/chat/message_bubble.dart';
 import 'package:mewhub/ui/theme.dart';
 import 'package:provider/provider.dart';
 
@@ -62,6 +63,52 @@ void main() {
     store.dispose();
     await store.flush();
     await temp.delete(recursive: true);
+  });
+
+  testWidgets('messages run behind the composer and the last one rests above it', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 24);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 24);
+    addTearDown(tester.view.reset);
+    app.chat.applyExternal((c) => c.copyWith(suggestions: const ['再详细一点', '换个说法']));
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: store),
+          ChangeNotifierProvider.value(value: app),
+          ChangeNotifierProvider(create: (_) => TtsService()),
+        ],
+        child: MaterialApp(theme: MewTheme.light(0), home: const ChatPage()),
+      ),
+    );
+    for (var frame = 0; frame < 50; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    final list = tester.getRect(find.byType(Scrollable).first);
+    final composer = tester.getRect(find.byType(Composer));
+    final suggestion = tester.getRect(find.text('再详细一点'));
+    // The list is no longer cut off above the dock: it reaches the screen edge.
+    expect(list.bottom, 844);
+    expect(list.bottom, greaterThan(composer.bottom - 1));
+    // At the bottom, the last reply still sits clear of suggestions and input.
+    final last = tester.getRect(find.textContaining('message 29', findRichText: true).first);
+    expect(last.bottom, lessThan(suggestion.top));
+    final position = tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+    expect(position.extentAfter, lessThan(1));
+
+    // Scrolling up puts conversation text behind the floating dock.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 240));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final under = find.byType(MessageBubble).evaluate().where((e) {
+      final box = e.renderObject! as RenderBox;
+      return (box.localToGlobal(Offset.zero) & box.size).overlaps(composer);
+    });
+    expect(under, isNotEmpty, reason: 'messages continue under the translucent composer area');
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('jump-to-bottom stays above the composer as its height changes', (tester) async {
