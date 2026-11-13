@@ -482,6 +482,7 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
             SwitchListTile(
               secondary: const IconBadge(Icons.verified_user_outlined),
               title: Text(t('运行工具前询问', 'Ask before running tools')),
+              subtitle: Text(t('每次调用工具前先请你确认', 'Confirm each tool call first')),
               value: _a.toolApproval,
               onChanged: (v) => _save(_a.copyWith(toolApproval: v)),
             ),
@@ -491,19 +492,42 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
           index: 1,
           title: t('本地工具', 'Local tools'),
           children: [
-            for (final (tool, icon, zh, en) in [
-              (LocalTool.timeInfo, Icons.schedule_rounded, '时间日期', 'Date & time'),
-              (LocalTool.calculator, Icons.calculate_outlined, '计算器', 'Calculator'),
-              (LocalTool.cartesianPlot, Icons.grid_on_rounded, '平面直角坐标系显示', 'Cartesian coordinate plot'),
-              (LocalTool.clipboard, Icons.content_paste_rounded, '剪贴板（需确认）', 'Clipboard (asks first)'),
-              (LocalTool.deviceInfo, Icons.smartphone_rounded, '设备信息', 'Device info'),
+            for (final (tool, icon, title, subtitle) in [
+              (
+                LocalTool.timeInfo,
+                Icons.schedule_rounded,
+                t('时间日期', 'Date & time'),
+                t('获取当前日期、时间和时区', 'Current date, time and zone'),
+              ),
+              (
+                LocalTool.calculator,
+                Icons.calculate_outlined,
+                t('计算器', 'Calculator'),
+                t('精确计算算式与常用函数', 'Exact maths and functions'),
+              ),
+              (
+                LocalTool.cartesianPlot,
+                Icons.grid_on_rounded,
+                t('平面直角坐标系显示', 'Cartesian coordinate plot'),
+                t('绘制函数和点，可全屏编辑', 'Graphs with a full-screen editor'),
+              ),
+              (
+                LocalTool.clipboard,
+                Icons.content_paste_rounded,
+                t('剪贴板（需确认）', 'Clipboard (asks first)'),
+                t('读取或写入剪贴板中的文字', 'Read or write clipboard text'),
+              ),
+              (
+                LocalTool.deviceInfo,
+                Icons.smartphone_rounded,
+                t('设备信息', 'Device info'),
+                t('获取系统版本、语言和电量', 'OS version, locale, battery'),
+              ),
             ])
               SwitchListTile(
                 secondary: IconBadge(icon),
-                title: Text(t(zh, en)),
-                subtitle: tool == LocalTool.cartesianPlot
-                    ? Text(t('在聊天中绘制函数和坐标点，支持全屏交互', 'Plot functions and points in chat with a full-screen editor'))
-                    : null,
+                title: Text(title),
+                subtitle: Text(subtitle),
                 value: _a.localTools.contains(tool),
                 onChanged: (v) => _save(_a.copyWith(localTools: toggle(tool, v))),
               ),

@@ -23,6 +23,7 @@ import '../../state/settings_store.dart';
 import '../chat/model_picker.dart';
 import '../settings/config_transfer_pages.dart';
 import '../export.dart';
+import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
 import '../widgets/markdown_view.dart';
@@ -345,7 +346,7 @@ class _TransferTile extends StatelessWidget {
               ? LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [scheme.primary, Color.lerp(scheme.primary, const Color(0xFFE7B98F), 0.45)!],
+                  colors: [scheme.primary, Color.lerp(scheme.primary, MewThemeColors.of(context).accentGlow, 0.45)!],
                 )
               : null,
           color: filled ? null : scheme.secondaryContainer.withValues(alpha: 0.6),

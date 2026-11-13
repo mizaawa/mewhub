@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../ai/message.dart';
 import '../chat/chat_controller.dart';
 import '../chat/helpers.dart';
+import '../core/accent_colors.dart';
 import '../data/conversation.dart';
 import '../data/chat_folder.dart';
 import '../data/database.dart';
@@ -231,7 +232,14 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     await refreshList();
     final s = store.value;
     if (s.display.notifyOnFinish && !isAppInForeground) {
-      unawaited(Notifier.showDone(c.title.isEmpty ? 'MewHub' : c.title, last.text, conversationId: c.id));
+      unawaited(
+        Notifier.showDone(
+          c.title.isEmpty ? 'MewHub' : c.title,
+          last.text,
+          conversationId: c.id,
+          accent: accentColorAt(s.accentIndex),
+        ),
+      );
     }
     final msgs = c.currentMessages;
     final userTurns = msgs.where((m) => m.role == Role.user).length;

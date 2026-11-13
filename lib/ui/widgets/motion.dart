@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../theme.dart';
 
 /// Shrinks slightly while pressed, springs back on release.
 class Pressable extends StatefulWidget {
@@ -113,6 +116,7 @@ class _AmbientBackgroundState extends State<AmbientBackground> with SingleTicker
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final mew = MewThemeColors.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final reduce = MediaQuery.of(context).disableAnimations;
     return Stack(
@@ -128,8 +132,8 @@ class _AmbientBackgroundState extends State<AmbientBackground> with SingleTicker
                   t: _c.value,
                   colors: [
                     scheme.primary.withValues(alpha: (dark ? 0.10 : 0.13) * widget.intensity),
-                    const Color(0xFFF2C9A8).withValues(alpha: (dark ? 0.05 : 0.22) * widget.intensity),
-                    const Color(0xFFE8D9F2).withValues(alpha: (dark ? 0.05 : 0.20) * widget.intensity),
+                    mew.ambientWarm.withValues(alpha: (dark ? 0.05 : 0.22) * widget.intensity),
+                    mew.ambientCool.withValues(alpha: (dark ? 0.05 : 0.20) * widget.intensity),
                   ],
                 ),
               ),
@@ -164,7 +168,7 @@ class _BlobPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BlobPainter old) => old.t != t;
+  bool shouldRepaint(_BlobPainter old) => old.t != t || !listEquals(old.colors, colors);
 }
 
 /// Three softly bouncing dots shown while the model is thinking.

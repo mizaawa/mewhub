@@ -5,6 +5,7 @@ import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/github.dart';
 
 import '../../core/i18n.dart';
+import '../theme.dart';
 import 'common.dart';
 
 final Highlight _hl = Highlight()..registerLanguages(builtinAllLanguages);
@@ -70,7 +71,7 @@ class _CodeBlockState extends State<CodeBlock> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final bg = dark ? const Color(0xFF1C1915) : const Color(0xFFF7F2EB);
+    final bg = MewThemeColors.of(context).codeSurface;
     final base = TextStyle(
       fontFamily: 'monospace',
       fontFamilyFallback: const ['Menlo', 'Courier'],

@@ -9,6 +9,7 @@ import '../../data/assistant.dart';
 import '../../data/conversation.dart';
 import '../../data/settings.dart';
 import '../../tools/cartesian_plot.dart';
+import '../theme.dart';
 import '../widgets/cartesian_plot_view.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
@@ -102,7 +103,10 @@ class MessageBubble extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [scheme.primary.withValues(alpha: 0.95), Color.lerp(scheme.primary, const Color(0xFFE7B98F), 0.35)!],
+          colors: [
+            scheme.primary.withValues(alpha: 0.95),
+            Color.lerp(scheme.primary, MewThemeColors.of(context).accentGlow, 0.35)!,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../ai/model_registry.dart';
 import '../../core/i18n.dart';
 import '../../core/paths.dart';
+import '../theme.dart';
 import 'motion.dart';
 
 OverlayEntry? _toastEntry;
@@ -85,8 +86,7 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final dark = theme.brightness == Brightness.dark;
-    final bg = dark ? const Color(0xFF332D26) : const Color(0xFF4A3B30);
+    final bg = MewThemeColors.resolve(theme).toastSurface;
     final fg = Colors.white.withValues(alpha: 0.95);
     final accent = widget.error ? const Color(0xFFFFA8A0) : Color.lerp(scheme.primary, Colors.white, 0.45)!;
     return Positioned(

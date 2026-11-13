@@ -10,6 +10,7 @@ import '../../core/attachments.dart';
 import '../../core/i18n.dart';
 import '../../data/settings.dart';
 import '../../tools/cartesian_plot.dart';
+import '../theme.dart';
 import '../widgets/cartesian_plot_view.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
@@ -943,7 +944,9 @@ class _SendButton extends StatelessWidget {
         height: 40,
         decoration: BoxDecoration(
           gradient: enabled
-              ? LinearGradient(colors: [scheme.primary, Color.lerp(scheme.primary, const Color(0xFFE7B98F), 0.4)!])
+              ? LinearGradient(
+                  colors: [scheme.primary, Color.lerp(scheme.primary, MewThemeColors.of(context).accentGlow, 0.4)!],
+                )
               : null,
           color: enabled ? null : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(generating ? 13 : 20),

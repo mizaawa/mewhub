@@ -1,9 +1,15 @@
 import 'package:animations/animations.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/accent_colors.dart';
+
 /// MewHub palette: warm milk-white surfaces with a soft caramel / latte accent.
+///
+/// These are the colours as designed around Caramel. Every theme reads them
+/// through [mewRetint], so surfaces, text and lines follow the chosen accent.
 class MewColors {
   static const cream = Color(0xFFFBF7F1);
   static const milk = Color(0xFFFFFDF9);
@@ -20,16 +26,124 @@ class MewColors {
   static const nightRaised = Color(0xFF2A251F);
   static const nightLine = Color(0xFF3A332B);
 
-  static const accents = <Color>[
-    Color(0xFFB07D52),
-    Color(0xFFC48A9A),
-    Color(0xFF7E9C8B),
-    Color(0xFF8A93B8),
-    Color(0xFF6F98AD),
-    Color(0xFFB8956A),
-  ];
+  static const accents = accentColors;
 
   static const accentNames = ['焦糖 Caramel', '樱花 Sakura', '抹茶 Matcha', '薰衣草 Lavender', '海盐 Sea salt', '蜂蜜 Honey'];
+}
+
+/// Moves a colour designed around Caramel to the same place around [accent]:
+/// the hue turns with the accent and the saturation scales with the accent's,
+/// while lightness and alpha stay, so contrast carries over. Caramel itself and
+/// colourless white, black and greys come back unchanged.
+Color mewRetint(Color designed, Color accent) {
+  if (accent == MewColors.caramel) return designed;
+  final source = HSLColor.fromColor(designed);
+  if (source.saturation == 0) return designed;
+  final from = HSLColor.fromColor(MewColors.caramel);
+  final to = HSLColor.fromColor(accent);
+  return source
+      .withHue((source.hue + to.hue - from.hue) % 360)
+      .withSaturation(clampDouble(source.saturation * to.saturation / from.saturation, 0, 1))
+      .toColor();
+}
+
+/// MewHub colours drawn outside the Material [ColorScheme], tinted for the
+/// accent exactly like the scheme's surfaces.
+@immutable
+class MewThemeColors extends ThemeExtension<MewThemeColors> {
+  const MewThemeColors({
+    required this.accentGlow,
+    required this.accentPartner,
+    required this.ambientWarm,
+    required this.ambientCool,
+    required this.codeSurface,
+    required this.inlineCode,
+    required this.toastSurface,
+  });
+
+  factory MewThemeColors.forAccent(Color accent, Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    Color tone(Color designed) => mewRetint(designed, accent);
+    return MewThemeColors(
+      accentGlow: tone(const Color(0xFFE7B98F)),
+      accentPartner: tone(const Color(0xFF7E9C8B)),
+      ambientWarm: tone(const Color(0xFFF2C9A8)),
+      ambientCool: tone(const Color(0xFFE8D9F2)),
+      codeSurface: tone(dark ? const Color(0xFF1C1915) : const Color(0xFFF7F2EB)),
+      inlineCode: tone(dark ? const Color(0xFFF3D9C2) : const Color(0xFF8B4F28)),
+      toastSurface: tone(dark ? const Color(0xFF332D26) : MewColors.cocoa),
+    );
+  }
+
+  /// Light end of accent gradients: user bubbles, the send button, filled tiles.
+  final Color accentGlow;
+
+  /// A companion data colour that stays apart from the accent (token output share).
+  final Color accentPartner;
+
+  /// Soft washes drifting behind the chat and onboarding.
+  final Color ambientWarm;
+  final Color ambientCool;
+
+  final Color codeSurface;
+  final Color inlineCode;
+  final Color toastSurface;
+
+  /// Colours of the surrounding theme; plain themes (tests, previews) get Caramel.
+  static MewThemeColors of(BuildContext context) => resolve(Theme.of(context));
+
+  static MewThemeColors resolve(ThemeData theme) =>
+      theme.extension<MewThemeColors>() ?? MewThemeColors.forAccent(MewColors.caramel, theme.brightness);
+
+  @override
+  MewThemeColors copyWith({
+    Color? accentGlow,
+    Color? accentPartner,
+    Color? ambientWarm,
+    Color? ambientCool,
+    Color? codeSurface,
+    Color? inlineCode,
+    Color? toastSurface,
+  }) => MewThemeColors(
+    accentGlow: accentGlow ?? this.accentGlow,
+    accentPartner: accentPartner ?? this.accentPartner,
+    ambientWarm: ambientWarm ?? this.ambientWarm,
+    ambientCool: ambientCool ?? this.ambientCool,
+    codeSurface: codeSurface ?? this.codeSurface,
+    inlineCode: inlineCode ?? this.inlineCode,
+    toastSurface: toastSurface ?? this.toastSurface,
+  );
+
+  @override
+  MewThemeColors lerp(covariant ThemeExtension<MewThemeColors>? other, double t) {
+    if (other is! MewThemeColors) return this;
+    return MewThemeColors(
+      accentGlow: Color.lerp(accentGlow, other.accentGlow, t)!,
+      accentPartner: Color.lerp(accentPartner, other.accentPartner, t)!,
+      ambientWarm: Color.lerp(ambientWarm, other.ambientWarm, t)!,
+      ambientCool: Color.lerp(ambientCool, other.ambientCool, t)!,
+      codeSurface: Color.lerp(codeSurface, other.codeSurface, t)!,
+      inlineCode: Color.lerp(inlineCode, other.inlineCode, t)!,
+      toastSurface: Color.lerp(toastSurface, other.toastSurface, t)!,
+    );
+  }
+
+  // Value equality, so rebuilding with the same accent does not restart the
+  // app-wide theme animation.
+  @override
+  bool operator ==(Object other) =>
+      other is MewThemeColors &&
+      other.accentGlow == accentGlow &&
+      other.accentPartner == accentPartner &&
+      other.ambientWarm == ambientWarm &&
+      other.ambientCool == ambientCool &&
+      other.codeSurface == codeSurface &&
+      other.inlineCode == inlineCode &&
+      other.toastSurface == toastSurface;
+
+  @override
+  int get hashCode =>
+      Object.hash(accentGlow, accentPartner, ambientWarm, ambientCool, codeSurface, inlineCode, toastSurface);
 }
 
 /// System bars keep the app canvas visible behind gesture and three-button
@@ -47,29 +161,33 @@ SystemUiOverlayStyle mewSystemUiOverlayStyle(Brightness brightness) => SystemUiO
 );
 
 class MewTheme {
-  static ThemeData light(int accent) => _build(Brightness.light, MewColors.accents[accent % MewColors.accents.length]);
-  static ThemeData dark(int accent) => _build(Brightness.dark, MewColors.accents[accent % MewColors.accents.length]);
+  static ThemeData light(int accent) => _build(Brightness.light, accentColorAt(accent));
+  static ThemeData dark(int accent) => _build(Brightness.dark, accentColorAt(accent));
 
   static ColorScheme _scheme(Brightness b, Color accent) {
     final dark = b == Brightness.dark;
+    // The milk / latte neutrals are designed around Caramel; tint them for the
+    // chosen accent so backgrounds, text and lines change along with it.
+    Color tone(Color designed) => mewRetint(designed, accent);
+    final night = tone(MewColors.nightBase);
     return ColorScheme.fromSeed(seedColor: accent, brightness: b).copyWith(
       primary: dark ? Color.lerp(accent, Colors.white, 0.18) : accent,
       onPrimary: Colors.white,
-      surface: dark ? MewColors.nightBase : MewColors.cream,
-      onSurface: dark ? const Color(0xFFF1EAE1) : MewColors.ink,
-      onSurfaceVariant: dark ? const Color(0xFFB5A99C) : MewColors.mute,
-      surfaceContainerLowest: dark ? const Color(0xFF110E0B) : Colors.white,
-      surfaceContainerLow: dark ? MewColors.nightSurface : MewColors.milk,
-      surfaceContainer: dark ? MewColors.nightSurface : MewColors.porcelain,
-      surfaceContainerHigh: dark ? MewColors.nightRaised : const Color(0xFFEFE7DC),
-      surfaceContainerHighest: dark ? const Color(0xFF332D26) : MewColors.oat,
-      outline: dark ? const Color(0xFF5A5046) : const Color(0xFFD9CDBE),
-      outlineVariant: dark ? MewColors.nightLine : const Color(0xFFEAE0D3),
-      secondaryContainer: dark ? Color.lerp(accent, MewColors.nightBase, 0.72) : Color.lerp(accent, Colors.white, 0.80),
-      onSecondaryContainer: dark ? const Color(0xFFF6EDE3) : MewColors.cocoa,
-      primaryContainer: dark ? Color.lerp(accent, MewColors.nightBase, 0.6) : Color.lerp(accent, Colors.white, 0.72),
-      onPrimaryContainer: dark ? Colors.white : MewColors.cocoa,
-      shadow: dark ? Colors.black : const Color(0xFF7A5C3E),
+      surface: dark ? night : tone(MewColors.cream),
+      onSurface: tone(dark ? const Color(0xFFF1EAE1) : MewColors.ink),
+      onSurfaceVariant: tone(dark ? const Color(0xFFB5A99C) : MewColors.mute),
+      surfaceContainerLowest: tone(dark ? const Color(0xFF110E0B) : Colors.white),
+      surfaceContainerLow: tone(dark ? MewColors.nightSurface : MewColors.milk),
+      surfaceContainer: tone(dark ? MewColors.nightSurface : MewColors.porcelain),
+      surfaceContainerHigh: tone(dark ? MewColors.nightRaised : const Color(0xFFEFE7DC)),
+      surfaceContainerHighest: tone(dark ? const Color(0xFF332D26) : MewColors.oat),
+      outline: tone(dark ? const Color(0xFF5A5046) : const Color(0xFFD9CDBE)),
+      outlineVariant: tone(dark ? MewColors.nightLine : const Color(0xFFEAE0D3)),
+      secondaryContainer: dark ? Color.lerp(accent, night, 0.72) : Color.lerp(accent, Colors.white, 0.80),
+      onSecondaryContainer: tone(dark ? const Color(0xFFF6EDE3) : MewColors.cocoa),
+      primaryContainer: dark ? Color.lerp(accent, night, 0.6) : Color.lerp(accent, Colors.white, 0.72),
+      onPrimaryContainer: dark ? Colors.white : tone(MewColors.cocoa),
+      shadow: dark ? Colors.black : tone(const Color(0xFF7A5C3E)),
     );
   }
 
@@ -91,8 +209,9 @@ class MewTheme {
     );
     final text = base.textTheme.apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
     final r14 = BorderRadius.circular(14);
-    final popupBg = dark ? MewColors.nightRaised : MewColors.cocoa;
+    final popupBg = mewRetint(dark ? MewColors.nightRaised : MewColors.cocoa, accent);
     return base.copyWith(
+      extensions: [MewThemeColors.forAccent(accent, b)],
       textTheme: text.copyWith(
         titleLarge: text.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2),
         titleMedium: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),

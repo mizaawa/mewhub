@@ -6,6 +6,7 @@ import '../../ai/message.dart';
 import '../../core/i18n.dart';
 import '../../core/util.dart';
 import '../../data/conversation.dart';
+import '../theme.dart';
 import '../widgets/motion.dart';
 
 /// Token usage of the visible branch of one conversation.
@@ -201,7 +202,7 @@ class _Hero extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [scheme.primary, Color.lerp(scheme.primary, const Color(0xFFE7B98F), 0.45)!],
+          colors: [scheme.primary, Color.lerp(scheme.primary, MewThemeColors.of(context).accentGlow, 0.45)!],
         ),
         boxShadow: [
           BoxShadow(color: scheme.primary.withValues(alpha: 0.25), blurRadius: 18, offset: const Offset(0, 8)),
@@ -248,7 +249,7 @@ class _Split extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final output = Color.lerp(scheme.primary, const Color(0xFF7E9C8B), 0.55)!;
+    final output = Color.lerp(scheme.primary, MewThemeColors.of(context).accentPartner, 0.55)!;
     final inShare = usage.total == 0 ? 0.5 : usage.input / usage.total;
     Widget side(IconData icon, String label, int value, Color color, CrossAxisAlignment align) => Column(
       crossAxisAlignment: align,

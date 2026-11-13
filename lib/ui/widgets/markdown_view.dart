@@ -4,6 +4,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../theme.dart';
 import 'code_block.dart';
 import 'image_viewer.dart';
 
@@ -53,7 +54,7 @@ class MarkdownView extends StatelessWidget {
         fontFamilyFallback: const ['Menlo', 'Courier'],
         fontSize: 13.5 * fontScale,
         backgroundColor: scheme.primary.withValues(alpha: dark ? 0.18 : 0.10),
-        color: dark ? const Color(0xFFF3D9C2) : const Color(0xFF8B4F28),
+        color: MewThemeColors.resolve(theme).inlineCode,
       ),
       // The custom CodeBlock owns its surface and clipping. The markdown
       // package still decorates `pre`, which otherwise leaves a square halo.

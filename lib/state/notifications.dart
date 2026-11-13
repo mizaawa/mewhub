@@ -31,23 +31,29 @@ class Notifier {
     return false;
   }
 
-  static Future<void> showDone(String title, String body, {required String conversationId}) async {
+  /// [accent] tints the small icon and app name, matching the chosen theme colour.
+  static Future<void> showDone(
+    String title,
+    String body, {
+    required String conversationId,
+    required Color accent,
+  }) async {
     try {
       await init();
       await _plugin.show(
         id: _notificationId(conversationId),
         title: title,
         body: body.length > 120 ? '${body.substring(0, 120)}…' : body,
-        notificationDetails: const NotificationDetails(
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             'reply',
             'Replies',
             channelDescription: 'Notifies when a reply finishes',
             importance: Importance.defaultImportance,
             icon: '@drawable/ic_stat_mewhub',
-            color: Color(0xFFB07D52),
+            color: accent,
           ),
-          iOS: DarwinNotificationDetails(presentAlert: false, presentBanner: false),
+          iOS: const DarwinNotificationDetails(presentAlert: false, presentBanner: false),
         ),
       );
     } catch (_) {}
