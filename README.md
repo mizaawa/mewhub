@@ -22,13 +22,14 @@ MewHub 是一个多供应商 AI 聊天客户端，功能参考 [RikkaHub](https:
 - **导入配置**：扫码 / 剪贴板导入，兼容 RikkaHub 的 `ai-provider:v1:` 分享码与通用 JSON
 - **深度思考**：思考强度滑动条六档（Auto / Low / Medium / High / XHigh / Max），模型不支持的档位自动降级，新对话沿用上次的模型与强度；输入框可一键展开全屏编辑；按厂商自动转换参数（Claude adaptive thinking、OpenAI reasoning effort、Gemini thinkingConfig、DeepSeek/Qwen/GLM/Kimi 开关），思考过程可折叠；签名与加密推理内容会正确回传，多轮工具调用不丢上下文
 - **工具调用（Agent 循环）**：联网搜索（Bing 免 Key、Tavily、Exa、Brave、Serper、Jina、智谱、博查、Perplexity、SearXNG、LinkUp）、网页读取、长期记忆、计算器、时间、剪贴板、设备信息；运行前可要求确认
+- **平面直角坐标系**：在助手设置的本地工具中开启；助手可以直接在聊天里绘制函数和标记坐标点，打开圆角图表卡片可全屏缩放、平移并编辑函数、点位和坐标范围，图形由设备本地绘制，无需上传外部生图服务
 - **MCP**：远程 Streamable HTTP 与 SSE 服务器，按工具开关；聊天输入框「+」里的 MCP 抽屉显示实时连接状态并一键开关，会话过期自动重连
 - **模型内置能力**：OpenAI / Claude / Gemini 原生联网搜索、Gemini URL 上下文、生图模型
-- **多模态**：图片、拍照、PDF / Word / PPT / Excel / EPUB / 代码等文档（本地提取文本）；拍照和相册图片会先进入裁剪器：图片居中留边，拖动边角裁剪、松手后选区自动放大回到中间，支持双指缩放、旋转和自由 / 原图 / 1:1 / 4:3 / 3:4 / 16:9 / 9:16 比例
+- **多模态**：图片、拍照、PDF / Word / PPT / Excel / EPUB / 代码等文档（本地提取文本）；拍照和相册图片会先进入裁剪器：图片居中留边，拖动边角裁剪、松手后选区自动放大回到中间，支持双指缩放、旋转和自由 / 原图 / 1:1 / 4:3 / 3:4 / 16:9 / 9:16 比例；Android 10 以下通过系统相册兼容入口选择图片
 - **聊天界面**：消息一直延伸到输入框后面，追问建议浮在消息上，输入区只在底部渐隐；模型和思考强度收进输入框的操作行，阅读区域更大；助手参数里的 Temperature / Top P 附带用途说明
 - **对话管理**：历史页支持置顶、侧滑删除与撤销、保留置顶并清理其余记录；消息搜索可按当前 / 所有助手筛选，按相关度或时间排序并高亮命中；另有分支、分叉、收藏、上下文压缩、Markdown 导出、本对话用量面板
 - **流式书写**：回复逐字落屏而不是整段跳出，落后的文字会自动追赶，结束时光标收束；中途停止会留下已经到达的内容并标记为「已停止生成」，可一键继续，下一轮对话仍把它当作上下文
-- **后台会话**：发送后立即进入侧栏，可切换到新对话而不打断旧回复；生成中的标题旁显示进度，Android 后台持续流式生成并在完成时按通知设置提醒；相册多选图片会逐张进入裁剪器。iOS 后台运行时间由系统限制。
+- **后台会话**：发送后立即进入侧栏，可切换到新对话而不打断旧回复；生成中的标题旁显示进度，Android 后台持续流式生成并在完成时按通知设置提醒；相册多选图片会逐张进入裁剪器，Android 回收进程后可以恢复尚未发送的相册和拍照附件。iOS 后台运行时间由系统限制。
 - **助手**：系统提示词变量、开场白、预设消息、消息模板、正则替换、世界书与模式注入、独立参数与背景图；导入 SillyTavern 角色卡（PNG / JSON，V1-V3）与世界书
 - **扩展抽屉**：在聊天里直接插入快捷短语、开关模式与世界书、查看和删除记忆
 - **扫码传输配置**：备份与恢复页把供应商、模型、助手、MCP、世界书等配置分成多张循环播放的二维码，另一台设备扫码即可导入，可选是否包含密钥
@@ -84,7 +85,7 @@ flutter run
 
 MewHub is a multi-provider AI chat client inspired by [RikkaHub](https://github.com/rikkahub/rikkahub), rebuilt in Flutter for Android and iOS, with a milk-white theme and motion throughout.
 
-**Highlights:** native OpenAI Chat / OpenAI Responses / Anthropic / Gemini streaming; any compatible gateway with custom URLs, headers, bodies and key rotation; reasoning controls mapped per vendor; agent tool loop with web search, page reading, memory and MCP, with in-chat drawers to toggle MCP servers, modes, lorebooks and quick messages; vision and document attachments; a RikkaHub-style cropper for camera and gallery photos (drag the corners, pinch to zoom, rotate, preset ratios); a chat list that runs behind a compact composer with model and reasoning controls inside the input; parallel background chats with Android streaming and completion notifications; a conversation history page with pinning, swipe-to-delete and undo, plus message search scoped by assistant with relevance/time sorting and highlighted matches; message branches, forks, favorites and context compression; replies that write themselves in character by character; editing a sent message always applies and regenerates, and a stopped reply keeps the text that arrived as context; assistants with lorebooks, regexes and SillyTavern card import; translation, image generation, TTS, usage stats, WebDAV backup and multi-code QR transfer of the whole configuration; light/dark themes, Chinese and English.
+**Highlights:** native OpenAI Chat / OpenAI Responses / Anthropic / Gemini streaming; any compatible gateway with custom URLs, headers, bodies and key rotation; reasoning controls mapped per vendor; agent tool loop with web search, page reading, memory and MCP, with in-chat drawers to toggle MCP servers, modes, lorebooks and quick messages; an opt-in local Cartesian plotting tool that draws and edits functions and points without an image service; vision and document attachments; a RikkaHub-style cropper for camera and gallery photos (drag the corners, pinch to zoom, rotate, preset ratios); Android gallery selection with compatibility support for older devices; a chat list that runs behind a compact composer with model and reasoning controls inside the input; parallel background chats with Android streaming and completion notifications; a conversation history page with pinning, swipe-to-delete and undo, plus message search scoped by assistant with relevance/time sorting and highlighted matches; message branches, forks, favorites and context compression; replies that write themselves in character by character; editing a sent message always applies and regenerates, and a stopped reply keeps the text that arrived as context; assistants with lorebooks, regexes and SillyTavern card import; translation, image generation, TTS, usage stats, WebDAV backup and multi-code QR transfer of the whole configuration; light/dark themes, Chinese and English.
 
 **Privacy:** keys live in the iOS Keychain / Android Keystore; data stays in the app sandbox; no analytics; requests go only to endpoints you configure.
 

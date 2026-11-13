@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../data/assistant.dart';
 import 'calculator.dart';
+import 'cartesian_plot.dart';
 import 'tool.dart';
 
 List<AppTool> buildLocalTools(Set<LocalTool> enabled) => [
@@ -91,4 +92,5 @@ List<AppTool> buildLocalTools(Set<LocalTool> enabled) => [
         }
       },
     ),
+  if (enabled.contains(LocalTool.cartesianPlot)) buildCartesianPlotTool(),
 ];

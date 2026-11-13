@@ -23,6 +23,17 @@ Widget _composer({required Future<void> Function(String) onSend}) => Composer(
 );
 
 void main() {
+  test('the light and dark themes keep the Android navigation area seamless', () {
+    for (final theme in [MewTheme.light(0), MewTheme.dark(0)]) {
+      final style = theme.appBarTheme.systemOverlayStyle!;
+      expect(style.systemNavigationBarColor, Colors.transparent);
+      expect(style.systemNavigationBarDividerColor, Colors.transparent);
+      expect(style.systemNavigationBarContrastEnforced, isFalse);
+      expect(style.statusBarColor, Colors.transparent);
+      expect(style.systemStatusBarContrastEnforced, isFalse);
+    }
+  });
+
   testWidgets('toast sits above the composer and closes from its button', (tester) async {
     late BuildContext ctx;
     await tester.pumpWidget(

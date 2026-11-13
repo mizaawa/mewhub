@@ -11,6 +11,7 @@ import '../../core/attachments.dart';
 import '../../core/i18n.dart';
 import '../../core/paths.dart';
 import '../widgets/motion.dart';
+import '../theme.dart';
 
 /// Longest side of the decoded photo and of the exported crop.
 const _maxImageSize = 4096;
@@ -594,7 +595,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> with SingleTickerProv
     final crop = _crop;
     final dark = theme.brightness == Brightness.dark;
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      value: mewSystemUiOverlayStyle(dark ? Brightness.dark : Brightness.light),
       child: PopScope(
         canPop: !_saving,
         child: Scaffold(

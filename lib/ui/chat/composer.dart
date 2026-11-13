@@ -9,6 +9,8 @@ import '../../ai/provider_config.dart';
 import '../../core/attachments.dart';
 import '../../core/i18n.dart';
 import '../../data/settings.dart';
+import '../../tools/cartesian_plot.dart';
+import '../widgets/cartesian_plot_view.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
 import '../widgets/motion.dart';
@@ -40,6 +42,7 @@ class Composer extends StatefulWidget {
     this.extensionsLabel,
     this.extensionsActive = 0,
     this.onOpenExtensions,
+    this.plotEnabled = false,
   });
 
   final AppSettings settings;
@@ -68,6 +71,7 @@ class Composer extends StatefulWidget {
   final String? extensionsLabel;
   final int extensionsActive;
   final VoidCallback? onOpenExtensions;
+  final bool plotEnabled;
 
   @override
   State<Composer> createState() => ComposerState();
@@ -85,6 +89,12 @@ class ComposerState extends State<Composer> {
     super.initState();
     _text.addListener(_onChanged);
     _focus.addListener(_onChanged);
+    _attachments.addAll(Attachments.takeRecoveredChatPhotos());
+    if (_attachments.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) toast(context, t('已恢复中断前尚未发送的照片', 'Recovered photos from your interrupted chat'));
+      });
+    }
   }
 
   void _onChanged() => setState(() {});
@@ -183,7 +193,15 @@ class ComposerState extends State<Composer> {
         }
       }
     } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
+      if (mounted) {
+        final message = e is PlatformException && e.code == 'camera_access_denied'
+            ? t(
+                '相机权限被拒绝。请在系统设置的 MewHub 权限中允许相机，然后重试。',
+                'Camera access was denied. Allow Camera in MewHub’s system settings, then try again.',
+              )
+            : '$e';
+        toast(context, message, error: true);
+      }
     } finally {
       try {
         for (final photo in photos) {
@@ -453,6 +471,23 @@ class ComposerState extends State<Composer> {
     open();
   }
 
+  Future<void> _openPlot() async {
+    _focus.unfocus();
+    setState(() => _toolsOpen = false);
+    final part = await Navigator.of(context).push<ImagePart>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => CartesianPlotPage(initialPlot: CartesianPlot.example(), allowAttach: true),
+      ),
+    );
+    if (part == null) return;
+    if (mounted) {
+      setState(() => _attachments.add(part));
+    } else {
+      await Attachments.deleteStored(part.url);
+    }
+  }
+
   /// "+" panel: two drawer entries with live summaries above one row of
   /// compact actions, about the height of the old single tile row.
   Widget _toolsPanel(BuildContext context) {
@@ -529,6 +564,17 @@ class ComposerState extends State<Composer> {
         children: [
           if (entries.isNotEmpty) ...[Row(children: spaced(entries, 8, 0)), const SizedBox(height: 8)],
           Row(children: spaced(actions, 6, entries.length)),
+          if (widget.plotEnabled) ...[
+            const SizedBox(height: 8),
+            _EntryCard(
+              key: const ValueKey('composer-plot-entry'),
+              icon: Icons.grid_on_rounded,
+              title: t('平面直角坐标系', 'Cartesian plot'),
+              subtitle: t('绘制函数和坐标点', 'Draw functions and points'),
+              active: true,
+              onTap: _openPlot,
+            ),
+          ],
         ],
       ),
     );

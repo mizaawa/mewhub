@@ -494,12 +494,16 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
             for (final (tool, icon, zh, en) in [
               (LocalTool.timeInfo, Icons.schedule_rounded, '时间日期', 'Date & time'),
               (LocalTool.calculator, Icons.calculate_outlined, '计算器', 'Calculator'),
+              (LocalTool.cartesianPlot, Icons.grid_on_rounded, '平面直角坐标系显示', 'Cartesian coordinate plot'),
               (LocalTool.clipboard, Icons.content_paste_rounded, '剪贴板（需确认）', 'Clipboard (asks first)'),
               (LocalTool.deviceInfo, Icons.smartphone_rounded, '设备信息', 'Device info'),
             ])
               SwitchListTile(
                 secondary: IconBadge(icon),
                 title: Text(t(zh, en)),
+                subtitle: tool == LocalTool.cartesianPlot
+                    ? Text(t('在聊天中绘制函数和坐标点，支持全屏交互', 'Plot functions and points in chat with a full-screen editor'))
+                    : null,
                 value: _a.localTools.contains(tool),
                 onChanged: (v) => _save(_a.copyWith(localTools: toggle(tool, v))),
               ),

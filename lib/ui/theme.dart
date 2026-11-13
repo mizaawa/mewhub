@@ -32,6 +32,20 @@ class MewColors {
   static const accentNames = ['焦糖 Caramel', '樱花 Sakura', '抹茶 Matcha', '薰衣草 Lavender', '海盐 Sea salt', '蜂蜜 Honey'];
 }
 
+/// System bars keep the app canvas visible behind gesture and three-button
+/// navigation on Android. In particular, SystemUiOverlayStyle.light/dark both
+/// hard-code a black navigation bar, which leaves a black strip below pages.
+SystemUiOverlayStyle mewSystemUiOverlayStyle(Brightness brightness) => SystemUiOverlayStyle(
+  systemNavigationBarColor: Colors.transparent,
+  systemNavigationBarDividerColor: Colors.transparent,
+  systemNavigationBarIconBrightness: brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+  systemNavigationBarContrastEnforced: false,
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+  statusBarBrightness: brightness == Brightness.dark ? Brightness.dark : Brightness.light,
+  systemStatusBarContrastEnforced: false,
+);
+
 class MewTheme {
   static ThemeData light(int accent) => _build(Brightness.light, MewColors.accents[accent % MewColors.accents.length]);
   static ThemeData dark(int accent) => _build(Brightness.dark, MewColors.accents[accent % MewColors.accents.length]);
@@ -97,7 +111,7 @@ class MewTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         titleTextStyle: text.titleLarge?.copyWith(fontWeight: FontWeight.w700, fontSize: 20),
-        systemOverlayStyle: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        systemOverlayStyle: mewSystemUiOverlayStyle(b),
       ),
       cardTheme: CardThemeData(
         color: scheme.surfaceContainerLow,

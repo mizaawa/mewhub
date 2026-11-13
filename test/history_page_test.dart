@@ -126,13 +126,21 @@ void main() {
     final dismissible = tester.widget<Dismissible>(find.byKey(ValueKey('history-dismiss-${first.id}')));
     expect(await tester.runAsync(() => dismissible.confirmDismiss!(DismissDirection.endToStart)), isTrue);
     dismissible.onDismissed!(DismissDirection.endToStart);
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
-    await tester.pump();
+    await _waitUntil(tester, () => find.byType(SnackBarAction).evaluate().isNotEmpty);
     expect((await tester.runAsync(db.listConversations))!.any((item) => item.id == first.id), isFalse);
 
     final undoAction = tester.widget<SnackBarAction>(find.byType(SnackBarAction));
     undoAction.onPressed();
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await _waitUntil(tester, () => app.conversations.any((item) => item.id == first.id));
     expect((await tester.runAsync(db.listConversations))!.any((item) => item.id == first.id), isTrue);
   });
+}
+
+Future<void> _waitUntil(WidgetTester tester, bool Function() ready) async {
+  for (var attempt = 0; attempt < 200; attempt++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+    await tester.pump(const Duration(milliseconds: 16));
+    if (ready()) return;
+  }
+  expect(ready(), isTrue, reason: 'History database operation did not complete');
 }

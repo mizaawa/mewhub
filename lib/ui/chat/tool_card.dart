@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../ai/message.dart';
 import '../../core/i18n.dart';
 import '../../core/util.dart';
+import '../../tools/cartesian_plot.dart';
+import '../widgets/cartesian_plot_view.dart';
 import '../widgets/code_block.dart';
 import '../widgets/motion.dart';
 
@@ -21,6 +23,7 @@ String toolLabel(String name) {
     'clipboard' => t('剪贴板', 'Clipboard'),
     'get_device_info' => t('设备信息', 'Device info'),
     'calculate' => t('计算器', 'Calculator'),
+    'plot_cartesian' => t('平面直角坐标系', 'Cartesian plot'),
     'memory_save' => t('记住', 'Remember'),
     'memory_update' => t('更新记忆', 'Update memory'),
     'memory_delete' => t('删除记忆', 'Forget'),
@@ -38,6 +41,7 @@ IconData toolIcon(String name) {
     'clipboard' => Icons.content_paste_rounded,
     'get_device_info' => Icons.smartphone_rounded,
     'calculate' => Icons.calculate_outlined,
+    'plot_cartesian' => Icons.grid_on_rounded,
     'memory_save' || 'memory_update' || 'memory_delete' => Icons.bookmark_added_outlined,
     _ => Icons.build_circle_outlined,
   };
@@ -61,9 +65,28 @@ class ToolCard extends StatefulWidget {
 class _ToolCardState extends State<ToolCard> {
   bool _open = false;
 
+  CartesianPlot? _plot() {
+    final part = widget.part;
+    if (part.name != 'plot_cartesian' || !part.executed || part.isError || part.approval == ToolApproval.denied) {
+      return null;
+    }
+    try {
+      final output = jsonDecode(part.output!);
+      if (output is! Map<String, dynamic> || output['type'] != 'cartesian_plot' || output['plot'] is! Map) {
+        return null;
+      }
+      return CartesianPlot.fromJson(Map<String, dynamic>.from(output['plot'] as Map));
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
+
   String _summary() {
     final input = widget.part.inputJson;
-    final v = input['query'] ?? input['url'] ?? input['expression'] ?? input['content'] ?? input['action'];
+    final v =
+        input['title'] ?? input['query'] ?? input['url'] ?? input['expression'] ?? input['content'] ?? input['action'];
     return v == null ? '' : truncate(v.toString(), 60);
   }
 
@@ -91,6 +114,9 @@ class _ToolCardState extends State<ToolCard> {
     final p = widget.part;
     final running = !p.executed && p.approval != ToolApproval.pending;
     final summary = _summary();
+    final plot = _plot();
+    final result = p.name == 'plot_cartesian' && p.output != null ? tryJsonDecode(p.output!) : null;
+    final plotError = result is Map ? result['error']?.toString() : null;
     final title = Text.rich(
       TextSpan(
         children: [
@@ -156,6 +182,16 @@ class _ToolCardState extends State<ToolCard> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               header,
+              if (plotError != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: Text(plotError, style: TextStyle(color: scheme.error)),
+                ),
+              if (plot != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                  child: CartesianPlotCard(key: ValueKey('plot-${p.callId}-${p.output}'), plot: plot),
+                ),
               if (p.pending) _approvalBar(context),
               AnimatedSize(
                 duration: const Duration(milliseconds: 260),

@@ -8,6 +8,8 @@ import '../../core/util.dart';
 import '../../data/assistant.dart';
 import '../../data/conversation.dart';
 import '../../data/settings.dart';
+import '../../tools/cartesian_plot.dart';
+import '../widgets/cartesian_plot_view.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
 import '../widgets/markdown_view.dart';
@@ -66,6 +68,21 @@ class MessageBubble extends StatelessWidget {
 
   ChatMessage get m => node.current;
 
+  Widget _image(ImagePart part, {bool thumbnail = false}) {
+    final json = part.meta?['cartesian_plot'];
+    if (json is Map<String, dynamic>) {
+      try {
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: CartesianPlotCard(plot: CartesianPlot.fromJson(json)),
+        );
+      } on FormatException {
+        // Malformed imported metadata must not prevent viewing the image.
+      }
+    }
+    return thumbnail ? _Thumb(url: part.url) : NetworkImageTile(url: part.url);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isUser = m.role == Role.user;
@@ -119,7 +136,7 @@ class MessageBubble extends StatelessWidget {
               spacing: 6,
               runSpacing: 6,
               alignment: WrapAlignment.end,
-              children: [for (final img in images) _Thumb(url: img.url)],
+              children: [for (final img in images) _image(img, thumbnail: true)],
             ),
           ),
         if (docs.isNotEmpty)
@@ -190,8 +207,8 @@ class MessageBubble extends StatelessWidget {
           if (p.name != 'web_search_result') {
             children.add(_ServerToolChip(key: ValueKey('s-${p.callId}'), part: p));
           }
-        case ImagePart(:final url):
-          children.add(NetworkImageTile(url: url));
+        case ImagePart():
+          children.add(_image(p));
         case CitationsPart(:final items):
           children.add(CitationChips(items: items));
         case DocumentPart():

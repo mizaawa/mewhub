@@ -15,6 +15,7 @@ import '../../chat/helpers.dart';
 import '../../core/i18n.dart';
 import '../../core/paths.dart';
 import '../../data/conversation.dart';
+import '../../data/assistant.dart';
 import '../../state/app_state.dart';
 import '../../state/settings_store.dart';
 import '../../state/tts.dart';
@@ -589,6 +590,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
                       ),
                       supportsReasoning: model?.reasoning ?? false,
                       supportsVision: model?.vision ?? true,
+                      plotEnabled: a.localTools.contains(LocalTool.cartesianPlot) && (model?.vision ?? true),
                       onCompress: () => _compress(c),
                       mcpLabel: mcpOverview.compact,
                       mcpDot: mcpOverview.dot(Theme.of(context).colorScheme),

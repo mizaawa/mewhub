@@ -232,6 +232,10 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
         run: |
           {
+            if [ -f "docs/releases/v$VERSION.md" ]; then
+              cat "docs/releases/v$VERSION.md"
+              echo
+            fi
             echo "## 📦 Downloads"
             echo
             echo "| Platform | File |"

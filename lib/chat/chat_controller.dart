@@ -11,6 +11,7 @@ import '../ai/provider_config.dart';
 import '../core/i18n.dart';
 import '../core/net.dart';
 import '../core/retry.dart';
+import '../core/util.dart';
 import '../data/assistant.dart';
 import '../data/conversation.dart';
 import '../data/database.dart';
@@ -556,7 +557,8 @@ class ChatController extends ChangeNotifier {
       final current = acc.parts[idx] as ToolPart;
       try {
         final out = await tool.execute(current.inputJson).timeout(const Duration(minutes: 3));
-        acc.parts[idx] = current.copyWith(output: out);
+        final decoded = call.name == 'plot_cartesian' ? tryJsonDecode(out) : null;
+        acc.parts[idx] = current.copyWith(output: out, isError: decoded is Map && decoded.containsKey('error'));
       } catch (e) {
         acc.parts[idx] = current.copyWith(output: jsonEncode({'error': e.toString()}), isError: true);
       }

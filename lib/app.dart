@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
@@ -96,6 +97,10 @@ class _MewHubAppState extends State<MewHubApp> with WidgetsBindingObserver {
       },
       supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: mewSystemUiOverlayStyle(Theme.of(context).brightness),
+        child: child ?? const SizedBox.shrink(),
+      ),
       // Rebuild every page when the language changes, since strings come from t().
       key: ValueKey('lang-${I18n.isZh}'),
       home: const _Root(),

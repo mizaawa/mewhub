@@ -5,24 +5,24 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
+import 'core/attachments.dart';
 import 'core/paths.dart';
 import 'data/database.dart';
 import 'state/app_state.dart';
 import 'state/settings_store.dart';
 import 'state/tts.dart';
+import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  configureAndroidImagePicker();
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarContrastEnforced: false,
-    ),
+    mewSystemUiOverlayStyle(WidgetsBinding.instance.platformDispatcher.platformBrightness),
   );
 
   await AppPaths.init();
+  await Attachments.recoverLostChatPhotos();
   final store = await SettingsStore.load();
   final db = await AppDatabase.open();
   await db.recordAppLaunch();

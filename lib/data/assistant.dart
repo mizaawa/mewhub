@@ -284,7 +284,7 @@ class ModeInjection {
 }
 
 /// Local tools the model may call on-device.
-enum LocalTool { timeInfo, clipboard, deviceInfo, calculator }
+enum LocalTool { timeInfo, clipboard, deviceInfo, calculator, cartesianPlot }
 
 class Assistant {
   Assistant({
