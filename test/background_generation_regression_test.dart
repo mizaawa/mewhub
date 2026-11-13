@@ -119,7 +119,18 @@ void main() {
     Net.reconfigure();
     await store.flush();
     store.dispose();
-    await temp.delete(recursive: true);
+    // Work after the reply (list refresh, settings writes) can still land a
+    // file while the sandbox is removed; retry instead of failing on Linux's
+    // "Directory not empty".
+    for (var attempt = 0; attempt < 10; attempt++) {
+      try {
+        await temp.delete(recursive: true);
+        break;
+      } on FileSystemException {
+        if (attempt == 9) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
   });
 
   test('first send appears in sidebar before the response finishes', () async {
