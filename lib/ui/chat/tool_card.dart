@@ -64,12 +64,22 @@ class ToolCard extends StatefulWidget {
 
 class _ToolCardState extends State<ToolCard> {
   bool _open = false;
+  // A streaming reply rebuilds this card many times a second; the plot is
+  // parsed and compiled once per tool output.
+  String? _plotSource;
+  CartesianPlot? _plotCache;
 
   CartesianPlot? _plot() {
     final part = widget.part;
     if (part.name != 'plot_cartesian' || !part.executed || part.isError || part.approval == ToolApproval.denied) {
       return null;
     }
+    if (part.output == _plotSource) return _plotCache;
+    _plotSource = part.output;
+    return _plotCache = _parsePlot(part);
+  }
+
+  static CartesianPlot? _parsePlot(ToolPart part) {
     try {
       final output = jsonDecode(part.output!);
       if (output is! Map<String, dynamic> || output['type'] != 'cartesian_plot' || output['plot'] is! Map) {
@@ -190,7 +200,11 @@ class _ToolCardState extends State<ToolCard> {
               if (plot != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                  child: CartesianPlotCard(key: ValueKey('plot-${p.callId}-${p.output}'), plot: plot),
+                  child: CartesianPlotCard(
+                    key: ValueKey('plot-${p.callId}-${p.output}'),
+                    plot: plot,
+                    showHeader: false,
+                  ),
                 ),
               if (p.pending) _approvalBar(context),
               AnimatedSize(

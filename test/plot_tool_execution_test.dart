@@ -99,6 +99,10 @@ void main() {
 
       expect(chat.lastError, isNull);
       expect(requests, hasLength(2));
+      // The plot tool brings its guidance for LaTeX replies into the system prompt.
+      final system = (requests.first['messages'] as List<dynamic>).cast<Map<String, dynamic>>().first;
+      expect(system['role'], 'system');
+      expect(system['content'], allOf(contains('<math_graphs>'), contains('LaTeX')));
       final saved = db.rows[chat.conversation.id]!;
       final restored = Conversation.fromJson(jsonDecode(jsonEncode(saved.toJson())) as Map<String, dynamic>);
       final part = restored.currentMessages.last.parts.whereType<ToolPart>().single;
@@ -117,7 +121,17 @@ void main() {
       Net.reconfigure();
       await store.flush();
       store.dispose();
-      await temp.delete(recursive: true);
+      // Writes that finish after the reply can still land in the sandbox
+      // while it is removed; retry instead of failing on "Directory not empty".
+      for (var attempt = 0; attempt < 10; attempt++) {
+        try {
+          await temp.delete(recursive: true);
+          break;
+        } on FileSystemException {
+          if (attempt == 9) rethrow;
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+      }
     }
   });
 }

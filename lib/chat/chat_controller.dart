@@ -246,7 +246,7 @@ class ChatController extends ChangeNotifier {
     final a = assistant;
     final s = settings;
     final tools = <AppTool>[
-      ...buildLocalTools(a.localTools),
+      ...buildLocalTools(a.localTools, latex: s.display.latex),
       if (a.enableWebSearch && !_useBuiltInSearch(model)) ...buildSearchTools(s),
       if (a.enableMemory) ...buildMemoryTools(db, assistantId: a.useGlobalMemory ? null : a.id),
     ];
@@ -414,6 +414,7 @@ class ChatController extends ChangeNotifier {
           extraModeIds: _conv.modeIds,
           memories: memories,
           recentTitles: recent,
+          toolHints: [for (final tool in tools) ?tool.promptHint],
         );
         final params = GenerationParams(
           model: model,

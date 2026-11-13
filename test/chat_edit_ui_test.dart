@@ -137,7 +137,17 @@ void main() {
     Net.reconfigure();
     await store.flush();
     store.dispose();
-    await temp.delete(recursive: true);
+    // A write that finishes after the reply can still land in the sandbox
+    // while it is removed; retry instead of failing on "Directory not empty".
+    for (var attempt = 0; attempt < 10; attempt++) {
+      try {
+        await temp.delete(recursive: true);
+        break;
+      } on FileSystemException {
+        if (attempt == 9) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
   });
 
   Widget host() => MultiProvider(

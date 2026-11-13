@@ -59,6 +59,7 @@ class MewThemeColors extends ThemeExtension<MewThemeColors> {
     required this.codeSurface,
     required this.inlineCode,
     required this.toastSurface,
+    required this.plotSeries,
   });
 
   factory MewThemeColors.forAccent(Color accent, Brightness brightness) {
@@ -72,6 +73,7 @@ class MewThemeColors extends ThemeExtension<MewThemeColors> {
       codeSurface: tone(dark ? const Color(0xFF1C1915) : const Color(0xFFF7F2EB)),
       inlineCode: tone(dark ? const Color(0xFFF3D9C2) : const Color(0xFF8B4F28)),
       toastSurface: tone(dark ? const Color(0xFF332D26) : MewColors.cocoa),
+      plotSeries: _plotSeriesFor(accent, dark),
     );
   }
 
@@ -89,6 +91,9 @@ class MewThemeColors extends ThemeExtension<MewThemeColors> {
   final Color inlineCode;
   final Color toastSurface;
 
+  /// Curve colours of the Cartesian plot, in the order functions take them.
+  final List<Color> plotSeries;
+
   /// Colours of the surrounding theme; plain themes (tests, previews) get Caramel.
   static MewThemeColors of(BuildContext context) => resolve(Theme.of(context));
 
@@ -104,6 +109,7 @@ class MewThemeColors extends ThemeExtension<MewThemeColors> {
     Color? codeSurface,
     Color? inlineCode,
     Color? toastSurface,
+    List<Color>? plotSeries,
   }) => MewThemeColors(
     accentGlow: accentGlow ?? this.accentGlow,
     accentPartner: accentPartner ?? this.accentPartner,
@@ -112,6 +118,7 @@ class MewThemeColors extends ThemeExtension<MewThemeColors> {
     codeSurface: codeSurface ?? this.codeSurface,
     inlineCode: inlineCode ?? this.inlineCode,
     toastSurface: toastSurface ?? this.toastSurface,
+    plotSeries: plotSeries ?? this.plotSeries,
   );
 
   @override
@@ -125,6 +132,7 @@ class MewThemeColors extends ThemeExtension<MewThemeColors> {
       codeSurface: Color.lerp(codeSurface, other.codeSurface, t)!,
       inlineCode: Color.lerp(inlineCode, other.inlineCode, t)!,
       toastSurface: Color.lerp(toastSurface, other.toastSurface, t)!,
+      plotSeries: [for (var i = 0; i < plotSeries.length; i++) Color.lerp(plotSeries[i], other.plotSeries[i], t)!],
     );
   }
 
@@ -139,11 +147,189 @@ class MewThemeColors extends ThemeExtension<MewThemeColors> {
       other.ambientCool == ambientCool &&
       other.codeSurface == codeSurface &&
       other.inlineCode == inlineCode &&
-      other.toastSurface == toastSurface;
+      other.toastSurface == toastSurface &&
+      listEquals(other.plotSeries, plotSeries);
 
   @override
-  int get hashCode =>
-      Object.hash(accentGlow, accentPartner, ambientWarm, ambientCool, codeSurface, inlineCode, toastSurface);
+  int get hashCode => Object.hash(
+    accentGlow,
+    accentPartner,
+    ambientWarm,
+    ambientCool,
+    codeSurface,
+    inlineCode,
+    toastSurface,
+    Object.hashAll(plotSeries),
+  );
+}
+
+/// Plot curve colours per accent, light then dark. Slot 1 is the accent made
+/// vivid enough to read as a line; the rest are a categorical palette ordered
+/// so that neighbouring curves, and any two of the first three, stay apart
+/// for protanopia, deuteranopia and full colour vision in both modes
+/// (validated with the data-viz palette checks against the plot paper).
+const _plotSeriesByAccent = <int, (List<Color>, List<Color>)>{
+  0xFFB07D52: (
+    [
+      Color(0xFFA25A00),
+      Color(0xFF1BAF7A),
+      Color(0xFF2A78D6),
+      Color(0xFFE34948),
+      Color(0xFF6250D6),
+      Color(0xFFEDA100),
+      Color(0xFFE87BA4),
+      Color(0xFF008300),
+    ],
+    [
+      Color(0xFFC36E03),
+      Color(0xFF199E70),
+      Color(0xFF3987E5),
+      Color(0xFFE66767),
+      Color(0xFF9085E9),
+      Color(0xFFC98500),
+      Color(0xFFD55181),
+      Color(0xFF008300),
+    ],
+  ),
+  0xFFC48A9A: (
+    [
+      Color(0xFFB75576),
+      Color(0xFF008300),
+      Color(0xFF2A78D6),
+      Color(0xFFEDA100),
+      Color(0xFFE87BA4),
+      Color(0xFF6250D6),
+      Color(0xFFEB6834),
+      Color(0xFF1BAF7A),
+    ],
+    [
+      Color(0xFFC46181),
+      Color(0xFF008300),
+      Color(0xFF3987E5),
+      Color(0xFFC98500),
+      Color(0xFFD55181),
+      Color(0xFF9085E9),
+      Color(0xFFD95926),
+      Color(0xFF199E70),
+    ],
+  ),
+  0xFF7E9C8B: (
+    [
+      Color(0xFF3E9A6F),
+      Color(0xFFEDA100),
+      Color(0xFF2A78D6),
+      Color(0xFF008300),
+      Color(0xFFE87BA4),
+      Color(0xFF6250D6),
+      Color(0xFFEB6834),
+      Color(0xFF1BAF7A),
+    ],
+    [
+      Color(0xFF4CA77B),
+      Color(0xFFC98500),
+      Color(0xFF3987E5),
+      Color(0xFF008300),
+      Color(0xFFD55181),
+      Color(0xFF9085E9),
+      Color(0xFFD95926),
+      Color(0xFF199E70),
+    ],
+  ),
+  0xFF8A93B8: (
+    [
+      Color(0xFF6372C6),
+      Color(0xFF008300),
+      Color(0xFFE87BA4),
+      Color(0xFFEDA100),
+      Color(0xFF2A78D6),
+      Color(0xFF1BAF7A),
+      Color(0xFF6250D6),
+      Color(0xFFE34948),
+    ],
+    [
+      Color(0xFF6F7ED4),
+      Color(0xFF008300),
+      Color(0xFFD55181),
+      Color(0xFFC98500),
+      Color(0xFF3987E5),
+      Color(0xFF199E70),
+      Color(0xFF9085E9),
+      Color(0xFFE66767),
+    ],
+  ),
+  0xFF6F98AD: (
+    [
+      Color(0xFF0486B2),
+      Color(0xFFEB6834),
+      Color(0xFF6250D6),
+      Color(0xFF1BAF7A),
+      Color(0xFF2A78D6),
+      Color(0xFFEDA100),
+      Color(0xFFE87BA4),
+      Color(0xFF008300),
+    ],
+    [
+      Color(0xFF0486B2),
+      Color(0xFFD95926),
+      Color(0xFF9085E9),
+      Color(0xFF199E70),
+      Color(0xFF3987E5),
+      Color(0xFFC98500),
+      Color(0xFFD55181),
+      Color(0xFF008300),
+    ],
+  ),
+  0xFFB8956A: (
+    [
+      Color(0xFF885703),
+      Color(0xFF1BAF7A),
+      Color(0xFF2A78D6),
+      Color(0xFFE34948),
+      Color(0xFF6250D6),
+      Color(0xFFEDA100),
+      Color(0xFFE87BA4),
+      Color(0xFF008300),
+    ],
+    [
+      Color(0xFFB67703),
+      Color(0xFF199E70),
+      Color(0xFF3987E5),
+      Color(0xFFE66767),
+      Color(0xFF9085E9),
+      Color(0xFFC98500),
+      Color(0xFFD55181),
+      Color(0xFF008300),
+    ],
+  ),
+};
+
+// The same validated hues in their reference order, for any other accent.
+const _defaultPlotSeries = (
+  [
+    Color(0xFF2A78D6),
+    Color(0xFFEB6834),
+    Color(0xFF1BAF7A),
+    Color(0xFFEDA100),
+    Color(0xFFE87BA4),
+    Color(0xFF008300),
+    Color(0xFF6250D6),
+    Color(0xFFE34948),
+  ],
+  [
+    Color(0xFF3987E5),
+    Color(0xFFD95926),
+    Color(0xFF199E70),
+    Color(0xFFC98500),
+    Color(0xFFD55181),
+    Color(0xFF008300),
+    Color(0xFF9085E9),
+    Color(0xFFE66767),
+  ],
+);
+
+List<Color> _plotSeriesFor(Color accent, bool dark) {
+  final (light, night) = _plotSeriesByAccent[accent.toARGB32()] ?? _defaultPlotSeries;
+  return dark ? night : light;
 }
 
 /// System bars keep the app canvas visible behind gesture and three-button

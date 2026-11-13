@@ -50,7 +50,17 @@ void main() {
     app.dispose();
     await store.flush();
     store.dispose();
-    await sandbox.delete(recursive: true);
+    // A settings write can still land while the sandbox is removed; retry
+    // instead of failing on "Directory not empty".
+    for (var attempt = 0; attempt < 10; attempt++) {
+      try {
+        await sandbox.delete(recursive: true);
+        break;
+      } on FileSystemException {
+        if (attempt == 9) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
   });
 
   testWidgets('conversation history rows stay compact while keeping their loading indicator', (tester) async {

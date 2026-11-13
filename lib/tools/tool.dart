@@ -9,6 +9,7 @@ class AppTool {
     required this.execute,
     this.needsApproval = false,
     this.displayName,
+    this.promptHint,
   });
 
   final String name;
@@ -17,6 +18,10 @@ class AppTool {
   final Future<String> Function(Map<String, dynamic> args) execute;
   final bool needsApproval;
   final String? displayName;
+
+  /// Appended to the system prompt while the tool is offered, for guidance
+  /// that shapes the reply around the call rather than the call itself.
+  final String? promptHint;
 
   ToolSpec get spec => ToolSpec(name: name, description: description, parameters: parameters);
 }

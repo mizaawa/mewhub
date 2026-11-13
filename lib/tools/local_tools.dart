@@ -9,7 +9,9 @@ import 'calculator.dart';
 import 'cartesian_plot.dart';
 import 'tool.dart';
 
-List<AppTool> buildLocalTools(Set<LocalTool> enabled) => [
+/// [latex] tells tools whose prompts talk about formulas whether messages
+/// render LaTeX (the display setting).
+List<AppTool> buildLocalTools(Set<LocalTool> enabled, {bool latex = true}) => [
   if (enabled.contains(LocalTool.timeInfo))
     AppTool(
       name: 'get_time_info',
@@ -92,5 +94,5 @@ List<AppTool> buildLocalTools(Set<LocalTool> enabled) => [
         }
       },
     ),
-  if (enabled.contains(LocalTool.cartesianPlot)) buildCartesianPlotTool(),
+  if (enabled.contains(LocalTool.cartesianPlot)) buildCartesianPlotTool(latex: latex),
 ];

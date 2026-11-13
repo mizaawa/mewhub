@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -14,17 +15,181 @@ void main() {
   Widget app(Widget child, {bool dark = false}) =>
       MaterialApp(theme: dark ? MewTheme.dark(3) : MewTheme.light(0), home: child);
 
-  test('geometry preserves equal unit lengths for non-square coordinate ranges', () {
-    final geometry = PlotGeometry(const Rect.fromLTRB(-10, -2, 10, 2), const Size(320, 480));
-    final origin = geometry.toScreen(Offset.zero);
+  group('geometry', () {
+    test('a window close to the canvas shape keeps equal units and fills the canvas', () {
+      // The old fit left blank bands beside a square window on a tall canvas.
+      const window = Rect.fromLTRB(-10, -10, 10, 10);
+      final geometry = PlotGeometry(window, const Size(360, 600));
+      expect(geometry.equalUnits, isTrue);
+      expect(geometry.xScale, geometry.yScale);
+      final origin = geometry.toScreen(Offset.zero);
+      expect(
+        (geometry.toScreen(const Offset(1, 0)) - origin).distance,
+        closeTo((geometry.toScreen(const Offset(0, 1)) - origin).distance, 1e-9),
+      );
+      // The whole window is shown and spans the canvas width; the extra
+      // height shows more of the plane instead of an empty margin.
+      expect(geometry.visible.left, lessThanOrEqualTo(window.left));
+      expect(geometry.visible.right, greaterThanOrEqualTo(window.right));
+      expect(geometry.visible.top, lessThan(window.top));
+      expect(geometry.visible.bottom, greaterThan(window.bottom));
+      expect(geometry.toScreen(window.topLeft).dx, closeTo(14, 1e-9));
+      expect(geometry.toScreen(window.bottomRight).dx, closeTo(360 - 14, 1e-9));
+      final restored = geometry.toWorld(geometry.toScreen(const Offset(3, -1)));
+      expect(restored.dx, closeTo(3, 1e-9));
+      expect(restored.dy, closeTo(-1, 1e-9));
+    });
+
+    test('a much taller or wider window is stretched to fill instead of shrinking into a strip', () {
+      const window = Rect.fromLTRB(-1, -1, 5, 30);
+      final geometry = PlotGeometry(window, const Size(340, 300));
+      expect(geometry.equalUnits, isFalse);
+      expect(geometry.toScreen(const Offset(-1, 0)).dx, closeTo(14, 1e-9));
+      expect(geometry.toScreen(const Offset(5, 0)).dx, closeTo(340 - 14, 1e-9));
+      expect(geometry.toScreen(const Offset(0, 30)).dy, closeTo(14, 1e-9));
+      expect(geometry.toScreen(const Offset(0, -1)).dy, closeTo(300 - 14, 1e-9));
+      final restored = geometry.toWorld(geometry.toScreen(const Offset(2, 17)));
+      expect(restored.dx, closeTo(2, 1e-9));
+      expect(restored.dy, closeTo(17, 1e-9));
+    });
+
+    test('graphs of sin, cos and tan get ticks at multiples of π', () {
+      expect(CartesianPlotPainter.piTickStep(4 * math.pi, 340), closeTo(math.pi / 2, 1e-12));
+      expect(CartesianPlotPainter.piTickStep(2 * math.pi, 340), closeTo(math.pi / 4, 1e-12));
+      expect(CartesianPlotPainter.piTickStep(100000, 340), isNull);
+    });
+
+    test('similar spans keep equal units on any canvas; lopsided windows fill it', () {
+      // A 4:3 window on a tall phone and a square one in landscape stay true.
+      for (final (window, size) in [
+        (const Rect.fromLTRB(-8, -6, 8, 6), const Size(388, 683)),
+        (const Rect.fromLTRB(-5, -5, 5, 5), const Size(880, 210)),
+      ]) {
+        final geometry = PlotGeometry(window, size);
+        expect(geometry.equalUnits, isTrue, reason: '$window on $size');
+        expect(geometry.xScale, geometry.yScale);
+      }
+      // sin x on [−2π, 2π] × [−1.5, 1.5] in the chat card fills its height.
+      final trig = PlotGeometry(Rect.fromLTRB(-2 * math.pi, -1.5, 2 * math.pi, 1.5), const Size(345, 172.5));
+      expect(trig.equalUnits, isFalse);
+      expect(trig.toScreen(const Offset(0, 1.5)).dy, closeTo(14, 1e-9));
+      expect(trig.toScreen(const Offset(0, -1.5)).dy, closeTo(172.5 - 14, 1e-9));
+    });
+
+    test('segments are clipped to the canvas before dashes are drawn', () {
+      const bounds = Rect.fromLTWH(0, 0, 400, 300);
+      final clip = CartesianPlotPainter.clipSegment(const Offset(-1e6, 50), const Offset(1e6, 50), bounds)!;
+      expect(Offset.lerp(const Offset(-1e6, 50), const Offset(1e6, 50), clip.$1)!.dx, closeTo(0, 1e-6));
+      expect(Offset.lerp(const Offset(-1e6, 50), const Offset(1e6, 50), clip.$2)!.dx, closeTo(400, 1e-6));
+      expect(CartesianPlotPainter.clipSegment(const Offset(-50, -50), const Offset(-10, -90), bounds), isNull);
+      expect(CartesianPlotPainter.clipSegment(const Offset(10, 10), const Offset(20, 20), bounds), (0.0, 1.0));
+    });
+
+    test('ticks land roughly 52 px apart on 1-2-5 steps', () {
+      expect(CartesianPlotPainter.tickStep(20, 340), 2);
+      expect(CartesianPlotPainter.tickStep(13, 340), 2);
+      expect(CartesianPlotPainter.tickStep(100, 300), 20);
+      expect(CartesianPlotPainter.tickStep(.02, 300), closeTo(.002, 1e-12));
+    });
+  });
+
+  testWidgets('the chat card takes the window shape and fills the width', (tester) async {
+    Future<Size> previewSize(CartesianPlot plot) async {
+      await tester.pumpWidget(
+        app(
+          Scaffold(
+            body: SingleChildScrollView(
+              child: SizedBox(width: 340, child: CartesianPlotCard(plot: plot)),
+            ),
+          ),
+        ),
+      );
+      return tester.getSize(find.byKey(const ValueKey('cartesian-preview')));
+    }
+
+    expect(await previewSize(CartesianPlot.example()), const Size(340, 340));
     expect(
-      (geometry.toScreen(const Offset(1, 0)) - origin).distance,
-      closeTo((geometry.toScreen(const Offset(0, 1)) - origin).distance, .000001),
+      await previewSize(CartesianPlot(xMin: -10, xMax: 10, yMin: -2, yMax: 2, functions: const ['sin(x)'])),
+      const Size(340, 170),
     );
-    final restored = geometry.toWorld(geometry.toScreen(const Offset(3, -1)));
-    expect(restored.dx, closeTo(3, .000001));
-    expect(restored.dy, closeTo(-1, .000001));
-    expect(CartesianPlotPainter.tickStep(20, 300), greaterThan(0));
+    expect(
+      await previewSize(CartesianPlot(xMin: -1, xMax: 5, yMin: -1, yMax: 30, functions: const ['2^x'])),
+      Size(340, 340 / .75),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('circles, reference lines and segments paint without errors in every theme', (tester) async {
+    final plot = CartesianPlot(
+      functions: const ['C: y = ±sqrt(9 - x^2)', 'y = 1', 'x = -1', 'sin(x)'],
+      points: const [
+        PlotPoint(x: 0, y: 0, label: 'A'),
+        PlotPoint(x: 3, y: 0, label: "A'"),
+        PlotPoint(x: 0, y: 3, label: 'P_1', showCoordinates: false),
+      ],
+      segments: const [
+        PlotSegment(from: 'A', to: "A'"),
+        PlotSegment(from: "A'", to: 'P_1', dashed: true),
+      ],
+      xMin: -4,
+      xMax: 4,
+      yMin: -4,
+      yMax: 4,
+    );
+    for (final dark in [false, true]) {
+      await tester.pumpWidget(
+        app(
+          Scaffold(
+            body: SingleChildScrollView(
+              child: SizedBox(width: 340, child: CartesianPlotCard(plot: plot, showHeader: false)),
+            ),
+          ),
+          dark: dark,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('cartesian-legend-0')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    // A figure of points and segments has no legend; the button floats.
+    await tester.pumpWidget(
+      app(
+        Scaffold(
+          body: SizedBox(
+            width: 340,
+            child: CartesianPlotCard(
+              plot: CartesianPlot(
+                points: const [
+                  PlotPoint(x: 0, y: 0, label: 'A'),
+                  PlotPoint(x: 1, y: 1, label: 'B'),
+                ],
+                segments: const [PlotSegment(from: 'A', to: 'B')],
+              ),
+              showHeader: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('cartesian-expand')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tapping the graph opens it full screen', (tester) async {
+    await tester.pumpWidget(
+      app(
+        Scaffold(
+          body: SingleChildScrollView(
+            child: SizedBox(width: 340, child: CartesianPlotCard(plot: CartesianPlot.example(), showHeader: false)),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('cartesian-expand')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('cartesian-preview')));
+    await tester.pumpAndSettle();
+    expect(find.byType(CartesianPlotPage), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('inline graph is visible and expands to interactive full-screen copy', (tester) async {
@@ -104,19 +269,26 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    await tester.enterText(find.byKey(const ValueKey('cartesian-functions-field')), 'sin(');
+    // The sheet scrolls; a field must be on screen to receive the text.
+    Future<void> type(String key, String text) async {
+      await tester.ensureVisible(find.byKey(ValueKey(key)));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(ValueKey(key)), text);
+    }
+
+    await type('cartesian-functions-field', 'sin(');
     await apply();
     expect(find.byKey(const ValueKey('cartesian-validation-error')), findsOneWidget);
-    await tester.enterText(find.byKey(const ValueKey('cartesian-functions-field')), 'sin(x)\n-x^2+4');
-    await tester.enterText(find.byKey(const ValueKey('cartesian-points-field')), 'bad point');
+    await type('cartesian-functions-field', 'sin(x)\n-x^2+4');
+    await type('cartesian-points-field', 'bad point');
     await apply();
     expect(find.textContaining('坐标点格式'), findsOneWidget);
-    await tester.enterText(find.byKey(const ValueKey('cartesian-points-field')), '1, 2, A\n-3, 4, B');
-    await tester.enterText(find.byKey(const ValueKey('cartesian-bound-0')), '20');
+    await type('cartesian-points-field', '1, 2, A\n-3, 4, B');
+    await type('cartesian-bound-0', '20');
     await apply();
     expect(find.textContaining('最大值必须大于'), findsOneWidget);
-    await tester.enterText(find.byKey(const ValueKey('cartesian-bound-0')), '-5');
-    await tester.enterText(find.byKey(const ValueKey('cartesian-title-field')), '我的函数');
+    await type('cartesian-bound-0', '-5');
+    await type('cartesian-title-field', '我的函数');
     await apply();
     expect(find.text('我的函数'), findsOneWidget);
     expect(find.byKey(const ValueKey('cartesian-validation-error')), findsNothing);
@@ -191,23 +363,62 @@ void main() {
     });
   });
 
-  testWidgets('eight functions have distinct legend colors in every theme', (tester) async {
+  testWidgets('eight functions get distinct curve colours and typeset formulas in every theme', (tester) async {
     final plot = CartesianPlot(functions: List.generate(8, (i) => 'x + $i'));
     for (var accent = 0; accent < MewColors.accents.length; accent++) {
       for (final dark in [false, true]) {
+        final theme = dark ? MewTheme.dark(accent) : MewTheme.light(accent);
+        final style = CartesianPlotStyle.of(theme);
+        expect(style.series.toSet(), hasLength(8), reason: 'accent $accent dark $dark');
+        // The paper follows the accent instead of staying plain white.
+        expect(style.paper, isNot(theme.colorScheme.surfaceContainerLow));
         await tester.pumpWidget(
           MaterialApp(
-            theme: dark ? MewTheme.dark(accent) : MewTheme.light(accent),
+            theme: theme,
             home: Scaffold(
               body: SingleChildScrollView(child: CartesianPlotCard(plot: plot)),
             ),
           ),
         );
         await tester.pumpAndSettle();
-        final colors = <Color?>{for (var i = 0; i < 8; i++) tester.widget<Text>(find.text('●  x + $i')).style!.color};
-        expect(colors, hasLength(8));
+        for (var i = 0; i < 8; i++) {
+          expect(find.byKey(ValueKey('cartesian-legend-$i')), findsOneWidget);
+          expect(find.byKey(ValueKey('cartesian-legend-swatch-$i')), findsOneWidget);
+        }
         expect(tester.takeException(), isNull);
       }
     }
+  });
+
+  test('the first curve takes the accent and every theme keeps its own palette', () {
+    for (var accent = 0; accent < MewColors.accents.length; accent++) {
+      final light = CartesianPlotStyle.of(MewTheme.light(accent)).series;
+      final dark = CartesianPlotStyle.of(MewTheme.dark(accent)).series;
+      final hue = HSLColor.fromColor(MewColors.accents[accent]).hue;
+      for (final first in [light.first, dark.first]) {
+        final difference = (HSLColor.fromColor(first).hue - hue).abs() % 360;
+        expect(math.min(difference, 360 - difference), lessThan(12), reason: 'accent $accent');
+      }
+    }
+  });
+
+  testWidgets('PNG export is as tall as the window shape needs', (tester) async {
+    expect(cartesianPngSize(CartesianPlot.example()).width, 1200);
+    final square = cartesianPngSize(CartesianPlot(functions: const ['x']));
+    final wide = cartesianPngSize(CartesianPlot(xMin: -10, xMax: 10, yMin: -2, yMax: 2, functions: const ['x']));
+    expect(wide.height, lessThan(square.height));
+    await tester.runAsync(() async {
+      final bytes = await renderCartesianPlotPng(
+        CartesianPlot(
+          functions: const ['f(x) = x^2 - 2x - 3', 'x = 1'],
+          points: const [PlotPoint(x: 1, y: -4, label: 'P_1', showCoordinates: false)],
+        ),
+      );
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      expect(frame.image.width, 1200);
+      frame.image.dispose();
+      codec.dispose();
+    });
   });
 }
