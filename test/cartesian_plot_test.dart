@@ -518,7 +518,7 @@ void main() {
     });
 
     test('without LaTeX rendering the prompt asks for Unicode math instead', () {
-      final tool = buildLocalTools({LocalTool.cartesianPlot}, latex: false).single;
+      final tool = buildLocalTools({LocalTool.cartesianPlot}, latex: false).first;
       expect(tool.promptHint, allOf(contains('Unicode'), isNot(contains(r'$...$'))));
       expect(tool.description, allOf(contains('Unicode'), isNot(contains(r'$...$'))));
       expect(tool.description, contains('never by colour'));
@@ -553,7 +553,7 @@ void main() {
     });
 
     test('the prompt asks for names-only labels and LaTeX replies', () {
-      final tool = buildLocalTools({LocalTool.cartesianPlot}).single;
+      final tool = buildLocalTools({LocalTool.cartesianPlot}).first;
       final schema = jsonEncode(tool.parameters);
       expect(tool.description, allOf(contains('name only'), contains('never write coordinates into a label')));
       expect(tool.description, contains(r'$...$'));

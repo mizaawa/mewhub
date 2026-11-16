@@ -1,14 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mewhub/ai/message.dart';
+import 'package:mewhub/ai/provider_config.dart';
 import 'package:mewhub/chat/chat_controller.dart';
 import 'package:mewhub/core/net.dart';
+import 'package:mewhub/core/paths.dart';
 import 'package:mewhub/data/assistant.dart';
+import 'package:mewhub/data/conversation.dart';
 import 'package:mewhub/data/models_misc.dart';
 import 'package:mewhub/data/settings.dart';
+import 'package:mewhub/state/settings_store.dart';
 import 'package:mewhub/tools/mcp.dart';
 import 'package:mewhub/tools/tool.dart';
+
+import 'chat_edit_resend_test.dart' show MemoryDatabase;
 
 class _LoopbackHttpOverrides extends HttpOverrides {}
 
@@ -170,6 +178,101 @@ void main() {
       await mcp.disconnect('dead');
       expect(mcp.client('dead'), isNull);
       mcp.dispose();
+    });
+  });
+
+  test('MCP calls run without approval even when tool confirmation is enabled', () async {
+    await _real(() async {
+      final temp = await Directory.systemTemp.createTemp('mewhub_mcp_approval');
+      AppPaths.support = temp;
+      AppPaths.cache = temp;
+      FlutterSecureStorage.setMockInitialValues({});
+      final store = await SettingsStore.load();
+      final mcp = McpManager();
+      late ChatController chat;
+      final model = ModelConfig(id: 'mcp-model', modelId: 'fixture', abilities: {ModelAbility.tool});
+      var requestCount = 0;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        requestCount++;
+        await utf8.decodeStream(request);
+        request.response.headers.contentType = ContentType('text', 'event-stream');
+        final delta = requestCount == 1
+            ? {
+                'tool_calls': [
+                  {
+                    'index': 0,
+                    'id': 'mcp-call',
+                    'type': 'function',
+                    'function': {
+                      'name': ChatController.mcpToolName('Fake', 'echo'),
+                      'arguments': jsonEncode({'text': 'hello'}),
+                    },
+                  },
+                ],
+              }
+            : {'content': 'Done'};
+        request.response.write(
+          'data: ${jsonEncode({
+            'choices': [
+              {'delta': delta, 'finish_reason': requestCount == 1 ? 'tool_calls' : 'stop'},
+            ],
+          })}\n\ndata: [DONE]\n\n',
+        );
+        await request.response.close();
+      });
+      store.update(
+        (s) => s.copyWith(
+          providers: [
+            ProviderConfig(
+              id: 'mcp-provider',
+              kind: ProviderKind.openai,
+              name: 'MCP fixture',
+              baseUrl: 'http://127.0.0.1:${server.port}/v1',
+              models: [model],
+            ),
+          ],
+          chatModelId: model.id,
+          autoRetry: false,
+          autoCompress: false,
+          mcpServers: [McpServerConfig(id: 'fake', name: 'Fake', url: fake.url)],
+          assistants: [
+            s.currentAssistant.copyWith(
+              enableMemory: false,
+              enableRecentChats: false,
+              enableWebSearch: false,
+              mcpServerIds: {'fake'},
+              toolApproval: true,
+            ),
+          ],
+        ),
+      );
+      chat = ChatController(
+        store: store,
+        db: MemoryDatabase(),
+        mcp: mcp,
+        conversation: Conversation(assistantId: store.value.currentAssistantId),
+      );
+      try {
+        await chat.send([const TextPart('Call MCP')]).timeout(const Duration(seconds: 10));
+        expect(fake.calls, ['echo']);
+        expect(chat.lastError, isNull);
+        expect(requestCount, 2);
+        final part = chat.conversation.currentMessages.expand((m) => m.parts).whereType<ToolPart>().single;
+        expect(part.approval, ToolApproval.auto);
+        expect(part.executed, isTrue);
+        expect(part.isError, isFalse);
+        expect(part.output, 'echo:{"text":"hello"}');
+        expect(chat.isAwaitingApproval('mcp-call'), isFalse);
+      } finally {
+        chat.dispose();
+        await mcp.closeAll();
+        mcp.dispose();
+        await server.close(force: true);
+        await store.flush();
+        store.dispose();
+        await temp.delete(recursive: true);
+      }
     });
   });
 

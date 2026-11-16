@@ -32,7 +32,7 @@ void main() {
     await tester.tap(find.text('工具'));
     await tester.pumpAndSettle();
 
-    const localTools = ['时间日期', '计算器', '平面直角坐标系显示', '剪贴板（需确认）', '设备信息'];
+    const localTools = ['时间日期', '计算器', '坐标系显示', '剪贴板（需确认）', '设备信息'];
     final heights = <double>{};
     for (final title in ['运行工具前询问', ...localTools]) {
       final tileFinder = find.ancestor(of: find.text(title), matching: find.byType(SwitchListTile));

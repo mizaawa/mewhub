@@ -444,7 +444,7 @@ String _text(Object? value, String name, int limit) {
 /// follows the user's setting for rendering formulas in messages.
 String cartesianPlotPromptHint({bool latex = true}) =>
     '<math_graphs>\n'
-    'You can draw graphs in this chat with plot_cartesian. Use it when a figure makes a math explanation clearer '
+    'You can draw graphs in this chat with plot_cartesian and interactive 3D graphs with plot_spatial. Use a graph when a figure makes a math explanation clearer '
     '(function graphs, intersections, solving equations or inequalities graphically, analytic geometry), then '
     'explain with reference to the graph.\n'
     '${latex ? _latexMath : _plainMath}\n'

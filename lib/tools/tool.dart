@@ -8,6 +8,7 @@ class AppTool {
     required this.parameters,
     required this.execute,
     this.needsApproval = false,
+    this.isMcp = false,
     this.displayName,
     this.promptHint,
   });
@@ -17,6 +18,7 @@ class AppTool {
   final Map<String, dynamic> parameters;
   final Future<String> Function(Map<String, dynamic> args) execute;
   final bool needsApproval;
+  final bool isMcp;
   final String? displayName;
 
   /// Appended to the system prompt while the tool is offered, for guidance

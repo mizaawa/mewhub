@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 /// A bounded mathematical expression tree. No scripts, remote code or eval.
+/// `y` can also be enabled as a second input for z=f(x,y) surface meshes.
 ///
 /// Supports x, pi, e, arithmetic, powers, implicit multiplication (2x), and
 /// common single-argument functions. Domain errors remain NaN / infinity so a
@@ -107,7 +108,8 @@ class PlotExpression {
   }
 
   /// y at [x]; with `±`, [lower] picks the branch with the minus sign.
-  double evaluate(double x, {bool lower = false}) => isVertical ? double.nan : _root.evaluate(x, lower ? -1 : 1);
+  double evaluate(double x, {bool lower = false, double y = 0}) =>
+      isVertical ? double.nan : _root.evaluate(x, lower ? -1 : 1, y);
 
   /// The right-hand side as LaTeX, such as `x^{2}-4x+3`.
   String get tex => _root.tex();
@@ -157,7 +159,7 @@ sealed class _Node {
   const _Node();
 
   /// [branch] is 1 for the upper and -1 for the lower branch of a `±`.
-  double evaluate(double x, double branch);
+  double evaluate(double x, double branch, [double y = 0]);
   bool get usesX;
   bool get periodic => false;
   int get level;
@@ -178,7 +180,7 @@ class _Constant extends _Node {
   final String literal;
 
   @override
-  double evaluate(double x, double branch) => value;
+  double evaluate(double x, double branch, [double y = 0]) => value;
   @override
   bool get usesX => false;
   // 1e3 prints as 1×10³, which is a product rather than a single symbol.
@@ -207,10 +209,11 @@ class _Constant extends _Node {
 }
 
 class _Variable extends _Node {
-  const _Variable();
+  const _Variable([this.isY = false]);
+  final bool isY;
 
   @override
-  double evaluate(double x, double branch) => x;
+  double evaluate(double x, double branch, [double y = 0]) => isY ? y : x;
   @override
   bool get usesX => true;
   @override
@@ -227,7 +230,8 @@ class _Unary extends _Node {
   final bool negate;
 
   @override
-  double evaluate(double x, double branch) => negate ? -operand.evaluate(x, branch) : operand.evaluate(x, branch);
+  double evaluate(double x, double branch, [double y = 0]) =>
+      negate ? -operand.evaluate(x, branch, y) : operand.evaluate(x, branch, y);
   @override
   bool get usesX => operand.usesX;
   @override
@@ -246,7 +250,7 @@ class _PlusMinus extends _Node {
   final _Node operand;
 
   @override
-  double evaluate(double x, double branch) => branch * operand.evaluate(x, branch);
+  double evaluate(double x, double branch, [double y = 0]) => branch * operand.evaluate(x, branch, y);
   @override
   bool get usesX => operand.usesX;
   @override
@@ -291,9 +295,9 @@ class _Binary extends _Node {
   final _Node right;
 
   @override
-  double evaluate(double x, double branch) {
-    final a = left.evaluate(x, branch);
-    final b = right.evaluate(x, branch);
+  double evaluate(double x, double branch, [double y = 0]) {
+    final a = left.evaluate(x, branch, y);
+    final b = right.evaluate(x, branch, y);
     return switch (operator) {
       '+' => a + b,
       '-' => a - b,
@@ -472,7 +476,7 @@ class _Function extends _Node {
   bool get delimited => functionName == 'abs' || functionName == 'floor' || functionName == 'ceil';
 
   @override
-  double evaluate(double x, double branch) => function(argument.evaluate(x, branch));
+  double evaluate(double x, double branch, [double y = 0]) => function(argument.evaluate(x, branch, y));
   @override
   bool get usesX => argument.usesX;
   @override
@@ -536,12 +540,47 @@ class _Function extends _Node {
   }
 }
 
+class SpatialExpression {
+  SpatialExpression._(this.source, this._root);
+
+  static const maxLength = PlotExpression.maxLength;
+  final String source;
+  final _Node _root;
+
+  // Remove a conventional z= or f(x,y)= prefix, then reuse the same safe parser.
+  static final _lhs = RegExp(r"^(?:[zZ]|[A-Za-z](?:_?\{?\d{1,2}\}?)?'{0,2}\s*\(\s*[xX]\s*[,，]\s*[yY]\s*\))\s*=\s*");
+
+  factory SpatialExpression.compile(String expression) {
+    final source = expression.trim();
+    if (source.isEmpty || source.length > maxLength) {
+      throw const FormatException('A surface expression must contain 1–512 characters.');
+    }
+    final rhs = source
+        .replaceFirst(_lhs, '')
+        .replaceAll('×', '*')
+        .replaceAll('·', '*')
+        .replaceAll('÷', '/')
+        .replaceAll('−', '-')
+        .replaceAll('π', 'pi')
+        .replaceAll('²', '^2')
+        .replaceAll('³', '^3')
+        .replaceAll('（', '(')
+        .replaceAll('）', ')');
+    if (rhs.trim().isEmpty) throw const FormatException('A surface needs an expression after =.');
+    final parser = _Parser(rhs)..surface = true;
+    return SpatialExpression._(source, parser.parse());
+  }
+
+  double evaluate(double x, double y) => _root.evaluate(x, 1, y);
+}
+
 class _Parser {
   _Parser(this.source);
   final String source;
   int _index = 0;
   int _depth = 0;
   int _nodes = 0;
+  bool surface = false;
 
   /// How many `±` the expression used; more than one is rejected.
   int plusMinus = 0;
@@ -671,6 +710,7 @@ class _Parser {
       _index = identifier.end;
       final name = identifier.group(0)!;
       if (name == 'x') return _node(const _Variable());
+      if (name == 'y' && surface) return _node(const _Variable(true));
       if (name == 'pi') return _node(const _Constant(math.pi, 'pi'));
       if (name == 'e') return _node(const _Constant(math.e, 'e'));
       final function = _functions[name];

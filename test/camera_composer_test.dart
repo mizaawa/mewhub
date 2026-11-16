@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -10,9 +9,7 @@ import 'package:mewhub/ai/provider_config.dart';
 import 'package:mewhub/core/attachments.dart';
 import 'package:mewhub/core/paths.dart';
 import 'package:mewhub/data/settings.dart';
-import 'package:mewhub/tools/cartesian_plot.dart';
 import 'package:mewhub/ui/chat/composer.dart';
-import 'package:mewhub/ui/widgets/cartesian_plot_view.dart';
 import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 
@@ -69,7 +66,7 @@ void main() {
     await sandbox.delete(recursive: true);
   });
 
-  Future<void> showComposer(WidgetTester tester, {bool plotEnabled = false}) async {
+  Future<void> showComposer(WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -92,7 +89,6 @@ void main() {
               supportsReasoning: false,
               supportsVision: true,
               onCompress: () {},
-              plotEnabled: plotEnabled,
             ),
           ),
         ),
@@ -248,26 +244,12 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('coordinate editor attaches a real PNG with editable metadata before sending', (tester) async {
-    await showComposer(tester, plotEnabled: true);
+  testWidgets('the plus panel no longer exposes a coordinate plotting shortcut', (tester) async {
+    await showComposer(tester);
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('composer-plot-entry')));
-    await tester.pumpAndSettle();
-    expect(find.byType(CartesianPlotPage), findsOneWidget);
-    await tester.runAsync(() => tester.tap(find.byKey(const ValueKey('cartesian-attach'))));
-    await _waitUntil(tester, () => find.byType(Composer).evaluate().isNotEmpty);
-    expect(sent, isEmpty);
-    expect(find.descendant(of: find.byType(Composer), matching: find.byType(Image)), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
-    await tester.pumpAndSettle();
-    expect(sent, hasLength(1));
-    final part = sent.single.whereType<ImagePart>().single;
-    final restored = Part.fromJson(jsonDecode(jsonEncode(part.toJson())) as Map<String, dynamic>)! as ImagePart;
-    final plot = CartesianPlot.fromJson(restored.meta!['cartesian_plot'] as Map<String, dynamic>);
-    expect(plot.functions, CartesianPlot.example().functions);
-    final bytes = await tester.runAsync(() => File(AppPaths.resolve(restored.url)).readAsBytes());
-    expect(bytes!.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(find.byKey(const ValueKey('composer-plot-entry')), findsNothing);
+    expect(find.text('平面直角坐标系'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

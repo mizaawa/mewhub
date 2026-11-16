@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../data/assistant.dart';
 import 'calculator.dart';
 import 'cartesian_plot.dart';
+import 'spatial_plot.dart';
 import 'tool.dart';
 
 /// [latex] tells tools whose prompts talk about formulas whether messages
@@ -94,5 +95,5 @@ List<AppTool> buildLocalTools(Set<LocalTool> enabled, {bool latex = true}) => [
         }
       },
     ),
-  if (enabled.contains(LocalTool.cartesianPlot)) buildCartesianPlotTool(latex: latex),
+  if (enabled.contains(LocalTool.cartesianPlot)) ...[buildCartesianPlotTool(latex: latex), buildSpatialPlotTool()],
 ];

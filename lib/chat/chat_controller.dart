@@ -277,7 +277,7 @@ class ChatController extends ChangeNotifier {
             displayName: '${cfg.name} · ${t.name}',
             description: t.description.trim().isEmpty ? 'Tool "${t.name}" from MCP server ${cfg.name}' : t.description,
             parameters: normalizeToolSchema(t.inputSchema),
-            needsApproval: true,
+            isMcp: true,
             execute: (args) async {
               // Resolve the live client: the server may have reconnected since.
               final current = settings.mcpServers.where((m) => m.id == cfg.id).firstOrNull ?? cfg;
@@ -535,7 +535,7 @@ class ChatController extends ChangeNotifier {
         onUpdate(List.unmodifiable(acc.parts));
         continue;
       }
-      if (a.toolApproval || tool.needsApproval) {
+      if (!tool.isMcp && (a.toolApproval || tool.needsApproval)) {
         acc.parts[idx] = call.copyWith(approval: ToolApproval.pending);
         onUpdate(List.unmodifiable(acc.parts));
         _flushNotify();
@@ -558,7 +558,7 @@ class ChatController extends ChangeNotifier {
       final current = acc.parts[idx] as ToolPart;
       try {
         final out = await tool.execute(current.inputJson).timeout(const Duration(minutes: 3));
-        final decoded = call.name == 'plot_cartesian' ? tryJsonDecode(out) : null;
+        final decoded = call.name == 'plot_cartesian' || call.name == 'plot_spatial' ? tryJsonDecode(out) : null;
         acc.parts[idx] = current.copyWith(output: out, isError: decoded is Map && decoded.containsKey('error'));
       } catch (e) {
         acc.parts[idx] = current.copyWith(output: jsonEncode({'error': e.toString()}), isError: true);

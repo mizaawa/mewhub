@@ -508,8 +508,8 @@ class _AssistantEditPageState extends State<AssistantEditPage> with SingleTicker
               (
                 LocalTool.cartesianPlot,
                 Icons.grid_on_rounded,
-                t('平面直角坐标系显示', 'Cartesian coordinate plot'),
-                t('绘制函数和点，可全屏编辑', 'Graphs with a full-screen editor'),
+                t('坐标系显示', 'Coordinate plots'),
+                t('绘制二维曲线和三维曲面', '2D curves and 3D surfaces'),
               ),
               (
                 LocalTool.clipboard,

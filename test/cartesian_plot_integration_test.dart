@@ -24,7 +24,10 @@ void main() {
     expect(buildLocalTools(original.localTools).any((tool) => tool.name == 'plot_cartesian'), isFalse);
     final enabled = original.copyWith(localTools: {LocalTool.timeInfo, LocalTool.cartesianPlot});
     final restored = Assistant.fromJson(jsonDecode(jsonEncode(enabled.toJson())) as Map<String, dynamic>);
-    expect(buildLocalTools(restored.localTools).map((tool) => tool.name), contains('plot_cartesian'));
+    expect(
+      buildLocalTools(restored.localTools).map((tool) => tool.name),
+      containsAll(['plot_cartesian', 'plot_spatial']),
+    );
     expect(Assistant.fromJson({'id': 'old'}).localTools, {LocalTool.timeInfo});
   });
 
@@ -46,15 +49,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('工具'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('平面直角坐标系显示'), 220, scrollable: find.byType(Scrollable).last);
-    await tester.tap(find.text('平面直角坐标系显示'));
+    await tester.scrollUntilVisible(find.text('坐标系显示'), 220, scrollable: find.byType(Scrollable).last);
+    await tester.tap(find.text('坐标系显示'));
     await tester.pumpAndSettle();
     expect(store.value.assistantById('math')!.localTools, contains(LocalTool.cartesianPlot));
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('executed plot tools render from saved messages and open full screen', (tester) async {
-    final tool = buildLocalTools({LocalTool.cartesianPlot}).single;
+    final tool = buildLocalTools({LocalTool.cartesianPlot}).first;
     final output = await tool.execute({
       'title': '抛物线',
       'functions': ['x^2'],

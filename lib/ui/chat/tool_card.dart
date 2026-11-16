@@ -7,7 +7,9 @@ import '../../ai/message.dart';
 import '../../core/i18n.dart';
 import '../../core/util.dart';
 import '../../tools/cartesian_plot.dart';
+import '../../tools/spatial_plot.dart';
 import '../widgets/cartesian_plot_view.dart';
+import '../widgets/spatial_plot_view.dart';
 import '../widgets/code_block.dart';
 import '../widgets/motion.dart';
 
@@ -24,6 +26,7 @@ String toolLabel(String name) {
     'get_device_info' => t('设备信息', 'Device info'),
     'calculate' => t('计算器', 'Calculator'),
     'plot_cartesian' => t('平面直角坐标系', 'Cartesian plot'),
+    'plot_spatial' => t('空间直角坐标系', '3D Cartesian plot'),
     'memory_save' => t('记住', 'Remember'),
     'memory_update' => t('更新记忆', 'Update memory'),
     'memory_delete' => t('删除记忆', 'Forget'),
@@ -41,7 +44,7 @@ IconData toolIcon(String name) {
     'clipboard' => Icons.content_paste_rounded,
     'get_device_info' => Icons.smartphone_rounded,
     'calculate' => Icons.calculate_outlined,
-    'plot_cartesian' => Icons.grid_on_rounded,
+    'plot_cartesian' || 'plot_spatial' => Icons.grid_on_rounded,
     'memory_save' || 'memory_update' || 'memory_delete' => Icons.bookmark_added_outlined,
     _ => Icons.build_circle_outlined,
   };
@@ -68,6 +71,25 @@ class _ToolCardState extends State<ToolCard> {
   // parsed and compiled once per tool output.
   String? _plotSource;
   CartesianPlot? _plotCache;
+  SpatialPlot? _spatialCache;
+
+  SpatialPlot? _spatial() {
+    final part = widget.part;
+    if (part.name != 'plot_spatial' || !part.executed || part.isError || part.approval == ToolApproval.denied) {
+      return null;
+    }
+    if (part.output == _plotSource) return _spatialCache;
+    _plotSource = part.output;
+    try {
+      final output = jsonDecode(part.output!);
+      if (output is! Map<String, dynamic> || output['type'] != 'spatial_plot' || output['plot'] is! Map) return null;
+      return _spatialCache = SpatialPlot.fromJson(Map<String, dynamic>.from(output['plot'] as Map));
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
 
   CartesianPlot? _plot() {
     final part = widget.part;
@@ -125,6 +147,7 @@ class _ToolCardState extends State<ToolCard> {
     final running = !p.executed && p.approval != ToolApproval.pending;
     final summary = _summary();
     final plot = _plot();
+    final spatial = _spatial();
     final result = p.name == 'plot_cartesian' && p.output != null ? tryJsonDecode(p.output!) : null;
     final plotError = result is Map ? result['error']?.toString() : null;
     final title = Text.rich(
@@ -203,6 +226,15 @@ class _ToolCardState extends State<ToolCard> {
                   child: CartesianPlotCard(
                     key: ValueKey('plot-${p.callId}-${p.output}'),
                     plot: plot,
+                    showHeader: false,
+                  ),
+                ),
+              if (spatial != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                  child: SpatialPlotCard(
+                    key: ValueKey('spatial-${p.callId}-${p.output}'),
+                    plot: spatial,
                     showHeader: false,
                   ),
                 ),
