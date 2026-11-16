@@ -7,6 +7,7 @@ import 'package:mewhub/data/assistant.dart';
 import 'package:mewhub/tools/cartesian_plot.dart';
 import 'package:mewhub/tools/local_tools.dart';
 import 'package:mewhub/tools/plot_expression.dart';
+import 'package:mewhub/tools/plot_segment_style.dart';
 
 void main() {
   group('PlotExpression', () {
@@ -340,6 +341,41 @@ void main() {
       expect(CartesianPlot(functions: const ['x']).toJson().containsKey('segments'), isFalse);
     });
 
+    test('supports line patterns and named colors while reading legacy dashed data', () {
+      final plot = CartesianPlot.fromJson({
+        'points': [
+          {'x': 0, 'y': 0, 'label': 'A'},
+          {'x': 1, 'y': 0, 'label': 'B'},
+          {'x': 2, 'y': 0, 'label': 'C'},
+        ],
+        'segments': [
+          {'from': 'A', 'to': 'B', 'style': 'dotted', 'color': 'teal'},
+          {'from': 'B', 'to': 'C', 'dashed': true},
+        ],
+      });
+      expect(plot.segments.map((segment) => segment.style), [PlotLineStyle.dotted, PlotLineStyle.dashed]);
+      expect(plot.segments.first.color, PlotLineColor.teal);
+      final encoded = plot.toJson();
+      final restored = CartesianPlot.fromJson(jsonDecode(jsonEncode(encoded)) as Map<String, dynamic>);
+      expect(restored, plot);
+      expect(encoded['segments'], [
+        {'from': 'A', 'to': 'B', 'style': 'dotted', 'color': 'teal'},
+        {'from': 'B', 'to': 'C', 'style': 'dashed'},
+      ]);
+      expect(
+        () => CartesianPlot.fromJson({
+          'points': [
+            {'x': 0, 'y': 0, 'label': 'A'},
+            {'x': 1, 'y': 0, 'label': 'B'},
+          ],
+          'segments': [
+            {'from': 'A', 'to': 'B', 'color': '#ff0000'},
+          ],
+        }),
+        throwsFormatException,
+      );
+    });
+
     test('reject missing, ambiguous or identical ends', () {
       const points = [
         {'x': 0, 'y': 0, 'label': 'A'},
@@ -391,6 +427,16 @@ void main() {
       ) as Map<String, dynamic>;
       expect(result['type'], 'cartesian_plot');
       expect(CartesianPlot.fromJson(result['plot'] as Map<String, dynamic>).segments, hasLength(3));
+    });
+
+    test('documents line styles and color choices in the tool prompt and schema', () {
+      final tool = buildCartesianPlotTool();
+      expect(tool.promptHint, contains('dotted lines for projection guides'));
+      expect(tool.promptHint, contains('red, orange, green, teal, blue, purple, pink, gray or black'));
+      final segments = ((tool.parameters['properties'] as Map)['segments'] as Map)['items'] as Map;
+      final properties = segments['properties'] as Map;
+      expect(properties['style']['enum'], ['solid', 'dashed', 'dotted', 'dash_dot']);
+      expect(properties['color']['enum'], containsAll(['default', 'red', 'teal', 'blue', 'purple']));
     });
   });
 

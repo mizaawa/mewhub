@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'plot_expression.dart';
+import 'plot_segment_style.dart';
 import 'tool.dart';
 
 class PlotPoint {
@@ -147,18 +148,32 @@ class PlotCurve {
 /// A straight segment between two named points, such as a side of a
 /// triangle; dashed for a height, a median or a projection line.
 class PlotSegment {
-  const PlotSegment({required this.from, required this.to, this.dashed = false});
+  const PlotSegment({
+    required this.from,
+    required this.to,
+    bool dashed = false,
+    PlotLineStyle? style,
+    this.color = PlotLineColor.theme,
+  }) : style = style ?? (dashed ? PlotLineStyle.dashed : PlotLineStyle.solid);
   final String from;
   final String to;
-  final bool dashed;
+  final PlotLineStyle style;
+  final PlotLineColor color;
+  bool get dashed => style == PlotLineStyle.dashed;
 
   factory PlotSegment.fromJson(Map<String, dynamic> json) => PlotSegment(
     from: _text(json['from'], 'segment from', 40),
     to: _text(json['to'], 'segment to', 40),
-    dashed: json['dashed'] == true,
+    style: PlotLineStyle.parse(json['style'], legacyDashed: json['dashed'] == true),
+    color: PlotLineColor.parse(json['color']),
   );
 
-  Map<String, dynamic> toJson() => {'from': from, 'to': to, if (dashed) 'dashed': true};
+  Map<String, dynamic> toJson() => {
+    'from': from,
+    'to': to,
+    if (style != PlotLineStyle.solid) 'style': style.jsonName,
+    if (color != PlotLineColor.theme) 'color': color.jsonName,
+  };
 }
 
 /// Serializable plot data stored in the normal tool result / chat history.
@@ -446,7 +461,12 @@ String cartesianPlotPromptHint({bool latex = true}) =>
     '<math_graphs>\n'
     'You can draw graphs in this chat with plot_cartesian and interactive 3D graphs with plot_spatial. Use a graph when a figure makes a math explanation clearer '
     '(function graphs, intersections, solving equations or inequalities graphically, analytic geometry), then '
-    'explain with reference to the graph.\n'
+    'explain with reference to the graph. For named-point segments, connect every requested pair explicitly. '
+    'Use solid lines for visible object edges, dashed lines for auxiliary heights/medians or hidden edges, '
+    'dotted lines for projection guides, and dash_dot lines for centerlines or symmetry axes. Set color to '
+    'default, red, orange, green, teal, blue, purple, pink, gray or black when a distinction helps; use red/orange '
+    'for emphasis/constructions, green for a highlighted solution, blue for the main figure, purple for a '
+    'second construction, and gray/black for subdued details. Omit style and color for the normal solid theme line.\n'
     '${latex ? _latexMath : _plainMath}\n'
     '</math_graphs>';
 
@@ -549,14 +569,26 @@ AppTool buildCartesianPlotTool({bool latex = true}) => AppTool(
       'type': 'array',
       'description':
           'Up to 32 straight segments between labeled points, such as the sides of a triangle or polygon '
-          '(A to B, B to C, C to A). Set dashed for a height, a median or a projection line. Both ends must be '
+          '(A to B, B to C, C to A). Use solid for visible edges, dashed for auxiliary/hidden lines, dotted for '
+          'projection guides, or dash_dot for centerlines and symmetry axes; choose a named color to highlight or '
+          'group lines. Both ends must be '
           'labels of points in this call.',
       'maxItems': CartesianPlot.maxSegments,
       'items': objectSchema(
         {
           'from': {'type': 'string', 'description': 'Label of the first point, such as A.', 'maxLength': 40},
           'to': {'type': 'string', 'description': 'Label of the second point, such as B.', 'maxLength': 40},
-          'dashed': {'type': 'boolean', 'description': 'Draw a dashed auxiliary segment. Defaults to false.'},
+          'style': {
+            'type': 'string',
+            'enum': [for (final style in PlotLineStyle.values) style.jsonName],
+            'description': 'solid (default), dashed, dotted or dash_dot.',
+          },
+          'color': {
+            'type': 'string',
+            'enum': [for (final color in PlotLineColor.values) color.jsonName],
+            'description':
+                'Line color token. Defaults to theme; choose a palette name only when it clarifies the figure.',
+          },
         },
         required: ['from', 'to'],
       ),

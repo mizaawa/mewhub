@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 
 import '../../core/i18n.dart';
 import '../../tools/cartesian_plot.dart';
+import '../../tools/plot_segment_style.dart';
 import '../../tools/spatial_plot.dart';
 import 'cartesian_plot_view.dart';
+import 'plot_segment_painter.dart';
 
 String spatialPlotTitle(SpatialPlot plot) =>
     plot.title.isEmpty ? t('空间直角坐标系', '3D Cartesian coordinates') : prettyPlotTitle(plot.title);
@@ -38,10 +40,53 @@ class SpatialProjection {
     final rx = nx * math.cos(yaw) - ny * math.sin(yaw);
     final ry = nx * math.sin(yaw) + ny * math.cos(yaw);
     final screenY = ry * math.sin(pitch) + nz * math.cos(pitch);
-    final depth = ry * math.cos(pitch) - nz * math.sin(pitch);
-    // Perspective remains bounded while rotating and gives nearer objects a cue.
-    final perspective = 5.5 / (5.5 - depth * .65);
-    return Offset(rx * perspective, -screenY * perspective);
+    // Orthographic projection keeps parallel edges parallel and preserves
+    // equal lengths for equal world-space edges, so boxes do not look warped.
+    return Offset(rx, -screenY);
+  }
+
+  /// World-coordinate bounds of the XY plane needed to cover the viewport.
+  /// Returns null when the camera looks almost exactly along the plane.
+  Rect? xyPlaneWorldBounds(double z) {
+    final xMid = (plot.xMin + plot.xMax) / 2;
+    final yMid = (plot.yMin + plot.yMax) / 2;
+    final origin = project(xMid, yMid, z)?.at;
+    final xPoint = project(xMid + 1, yMid, z)?.at;
+    final yPoint = project(xMid, yMid + 1, z)?.at;
+    if (origin == null || xPoint == null || yPoint == null) return null;
+    final xAxis = xPoint - origin;
+    final yAxis = yPoint - origin;
+    final determinant = xAxis.dx * yAxis.dy - yAxis.dx * xAxis.dy;
+    if (!determinant.isFinite || determinant.abs() < 1e-5) return null;
+    final coords = <Offset>[];
+    for (final corner in [
+      Offset.zero,
+      Offset(size.width, 0),
+      Offset(size.width, size.height),
+      Offset(0, size.height),
+    ]) {
+      final delta = corner - origin;
+      final x = (delta.dx * yAxis.dy - delta.dy * yAxis.dx) / determinant + xMid;
+      final y = (xAxis.dx * delta.dy - xAxis.dy * delta.dx) / determinant + yMid;
+      if (!x.isFinite || !y.isFinite) return null;
+      coords.add(Offset(x, y));
+    }
+    return Rect.fromLTRB(
+      coords.map((p) => p.dx).reduce(math.min),
+      coords.map((p) => p.dy).reduce(math.min),
+      coords.map((p) => p.dx).reduce(math.max),
+      coords.map((p) => p.dy).reduce(math.max),
+    );
+  }
+
+  /// A screen-clipped infinite XY grid line at [value] world units.
+  (Offset, Offset)? xyGridLine({required bool fixedX, required double value, required double z}) {
+    final xMid = (plot.xMin + plot.xMax) / 2;
+    final yMid = (plot.yMin + plot.yMax) / 2;
+    final anchor = fixedX ? project(value, yMid, z)?.at : project(xMid, value, z)?.at;
+    final next = fixedX ? project(value, yMid + 1, z)?.at : project(xMid + 1, value, z)?.at;
+    if (anchor == null || next == null) return null;
+    return clipInfiniteLineToRect(anchor, next - anchor, Offset.zero & size);
   }
 
   /// Fit the projected coordinate box to both dimensions, including portrait
@@ -67,18 +112,16 @@ class SpatialProjection {
 
   /// World-space interval that keeps adjacent XY grid lines near 34 logical px.
   double get gridStep {
-    final pixelsPerUnit = _fitScale * zoom / _halfSpan;
-    final raw = 34 / pixelsPerUnit;
-    final magnitude = math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
-    final normalized = raw / magnitude;
-    final factor = normalized < 1.5
-        ? 1
-        : normalized < 3.5
-        ? 2
-        : normalized < 7.5
-        ? 5
-        : 10;
-    return factor * magnitude;
+    final worldScale = _fitScale * zoom / _halfSpan;
+    final xAxis = _projectUnit(1, 0, 0) * worldScale;
+    final yAxis = _projectUnit(0, 1, 0) * worldScale;
+    final area = (xAxis.dx * yAxis.dy - xAxis.dy * yAxis.dx).abs();
+    final pitchX = area / math.max(yAxis.distance, 1e-6);
+    final pitchY = area / math.max(xAxis.distance, 1e-6);
+    final smallestPitch = math.max(math.min(pitchX, pitchY), 1e-4);
+    // Do not quantize the world step to 1-2-5 values: that can make a small
+    // zoom change suddenly double the screen spacing of the whole grid.
+    return 34 / smallestPitch;
   }
 
   /// The axis line through [x], [y], [z], clipped to the canvas edges.
@@ -733,19 +776,6 @@ class SpatialPlotPainter extends CustomPainter {
   final CartesianPlotStyle style;
   final SpatialProjection projection;
 
-  void _line(Canvas canvas, Offset? a, Offset? b, Paint paint) {
-    if (a != null && b != null && a.isFinite && b.isFinite) canvas.drawLine(a, b, paint);
-  }
-
-  void _dashed(Canvas canvas, Offset a, Offset b, Paint paint) {
-    final length = (b - a).distance;
-    if (length == 0 || !length.isFinite) return;
-    final d = (b - a) / length;
-    for (var i = 0.0; i < length; i += 10) {
-      canvas.drawLine(a + d * i, a + d * math.min(i + 6, length), paint);
-    }
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width < 80 || size.height < 70) return;
@@ -768,19 +798,6 @@ class SpatialPlotPainter extends CustomPainter {
         ? plot.zMin
         : plot.zMax;
     final baseZ = oz;
-    final plane = Path();
-    final corners = [(plot.xMin, plot.yMin), (plot.xMax, plot.yMin), (plot.xMax, plot.yMax), (plot.xMin, plot.yMax)];
-    final firstCorner = at(corners.first.$1, corners.first.$2, baseZ);
-    if (firstCorner != null) {
-      plane.moveTo(firstCorner.dx, firstCorner.dy);
-      for (final (x, y) in corners.skip(1)) {
-        final point = at(x, y, baseZ);
-        if (point != null) plane.lineTo(point.dx, point.dy);
-      }
-      plane.close();
-      canvas.drawPath(plane, Paint()..color = style.seriesAt(0).withValues(alpha: .045));
-    }
-
     canvas.save();
     canvas.clipRect(Offset.zero & size);
     var step = g.gridStep;
@@ -797,24 +814,45 @@ class SpatialPlotPainter extends CustomPainter {
       return factor * magnitude;
     }
 
-    if ((plot.xMax - plot.xMin) / step > 400 || (plot.yMax - plot.yMin) / step > 400) {
-      step = niceStep(math.max(plot.xMax - plot.xMin, plot.yMax - plot.yMin) / 400);
-    }
-    void drawGridAxis(double min, double max, Offset? Function(double) lineStart, Offset? Function(double) lineEnd) {
-      final first = (min / step).ceil() * step;
-      for (var i = 0; i < 400; i++) {
-        final value = first + i * step;
-        if (value > max + step * 1e-9) break;
-        final major = (value / step).round() % 5 == 0;
-        final paint = Paint()
-          ..color = major ? style.majorGrid.withValues(alpha: .48) : style.grid
-          ..strokeWidth = major ? .9 : .65;
-        _line(canvas, lineStart(value), lineEnd(value), paint);
+    final planeBounds = g.xyPlaneWorldBounds(baseZ);
+    if (planeBounds != null) {
+      final plane = Path();
+      final planeCorners = [
+        at(planeBounds.left, planeBounds.top, baseZ),
+        at(planeBounds.right, planeBounds.top, baseZ),
+        at(planeBounds.right, planeBounds.bottom, baseZ),
+        at(planeBounds.left, planeBounds.bottom, baseZ),
+      ];
+      if (planeCorners.every((point) => point != null)) {
+        plane.moveTo(planeCorners.first!.dx, planeCorners.first!.dy);
+        for (final point in planeCorners.skip(1)) {
+          plane.lineTo(point!.dx, point.dy);
+        }
+        plane.close();
+        canvas.drawPath(plane, Paint()..color = style.seriesAt(0).withValues(alpha: .045));
       }
-    }
 
-    drawGridAxis(plot.xMin, plot.xMax, (x) => at(x, plot.yMin, baseZ), (x) => at(x, plot.yMax, baseZ));
-    drawGridAxis(plot.yMin, plot.yMax, (y) => at(plot.xMin, y, baseZ), (y) => at(plot.xMax, y, baseZ));
+      if (planeBounds.width / step > 400 || planeBounds.height / step > 400) {
+        step = niceStep(math.max(planeBounds.width, planeBounds.height) / 400);
+      }
+      void drawGridAxis({required bool fixedX, required double min, required double max}) {
+        final first = (min / step).ceil() * step;
+        for (var i = 0; i < 400; i++) {
+          final value = first + i * step;
+          if (value > max + step * 1e-9) break;
+          final line = g.xyGridLine(fixedX: fixedX, value: value, z: baseZ);
+          if (line == null) continue;
+          final major = (value / step).round() % 5 == 0;
+          final paint = Paint()
+            ..color = major ? style.majorGrid.withValues(alpha: .48) : style.grid
+            ..strokeWidth = major ? .9 : .65;
+          canvas.drawLine(line.$1, line.$2, paint);
+        }
+      }
+
+      drawGridAxis(fixedX: true, min: planeBounds.left, max: planeBounds.right);
+      drawGridAxis(fixedX: false, min: planeBounds.top, max: planeBounds.bottom);
+    }
     _paintSurfaces(canvas, g, size);
 
     final axes = Paint()
@@ -835,13 +873,10 @@ class SpatialPlotPainter extends CustomPainter {
       final b = at(to.x, to.y, to.z);
       if (a == null || b == null) continue;
       final paint = Paint()
-        ..color = style.ink.withValues(alpha: .8)
-        ..strokeWidth = 1.6;
-      if (segment.dashed) {
-        _dashed(canvas, a, b, paint);
-      } else {
-        canvas.drawLine(a, b, paint);
-      }
+        ..color = resolvePlotLineColor(segment.color, style.ink).withValues(alpha: .9)
+        ..strokeWidth = segment.style == PlotLineStyle.dotted ? 2.0 : 1.7
+        ..strokeCap = StrokeCap.round;
+      drawPlotSegment(canvas, a, b, paint, segment.style, (Offset.zero & size).inflate(8));
     }
 
     for (final p in plot.points) {

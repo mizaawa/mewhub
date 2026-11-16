@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'cartesian_plot.dart';
 import 'plot_expression.dart';
+import 'plot_segment_style.dart';
 import 'tool.dart';
 
 class SpatialPoint {
@@ -34,18 +35,32 @@ class SpatialPoint {
 }
 
 class SpatialSegment {
-  const SpatialSegment({required this.from, required this.to, this.dashed = false});
+  const SpatialSegment({
+    required this.from,
+    required this.to,
+    bool dashed = false,
+    PlotLineStyle? style,
+    this.color = PlotLineColor.theme,
+  }) : style = style ?? (dashed ? PlotLineStyle.dashed : PlotLineStyle.solid);
   final String from;
   final String to;
-  final bool dashed;
+  final PlotLineStyle style;
+  final PlotLineColor color;
+  bool get dashed => style == PlotLineStyle.dashed;
 
   factory SpatialSegment.fromJson(Map<String, dynamic> json) => SpatialSegment(
     from: _text(json['from'], 'segment from', 40),
     to: _text(json['to'], 'segment to', 40),
-    dashed: json['dashed'] == true,
+    style: PlotLineStyle.parse(json['style'], legacyDashed: json['dashed'] == true),
+    color: PlotLineColor.parse(json['color']),
   );
 
-  Map<String, dynamic> toJson() => {'from': from, 'to': to, if (dashed) 'dashed': true};
+  Map<String, dynamic> toJson() => {
+    'from': from,
+    'to': to,
+    if (style != PlotLineStyle.solid) 'style': style.jsonName,
+    if (color != PlotLineColor.theme) 'color': color.jsonName,
+  };
 }
 
 /// Validated serializable data for an interactive 3D Cartesian graph.
@@ -260,7 +275,11 @@ String spatialPlotPromptHint() =>
     'Example square A(0,0,0), B(2,0,0), C(2,2,0), D(0,2,0): points A–D and segments '
     '[{"from":"A","to":"B"},{"from":"B","to":"C"},{"from":"C","to":"D"},{"from":"D","to":"A"}]. '
     'For a triangle ABC use AB, BC, CA. For a vector from O to A use OA. When the request specifies a particular '
-    'construction, preserve its labels and include only those edges. Choose ranges that include all vertices.\n'
+    'construction, preserve its labels and include only those edges. Use solid for visible edges, dashed for '
+    'hidden edges or auxiliary heights/medians, dotted for projection guides, and dash_dot for centerlines or '
+    'symmetry axes. The optional color accepts default, red, orange, green, teal, blue, purple, pink, gray or '
+    'black; use distinct colors to group or emphasize construction lines and leave ordinary object edges at '
+    'the theme default. Choose ranges that include all vertices.\n'
     '</spatial_graphs>';
 
 AppTool buildSpatialPlotTool() => AppTool(
@@ -308,13 +327,25 @@ AppTool buildSpatialPlotTool() => AppTool(
       'description':
           'Up to 32 straight 3D edges. Each item joins two existing point labels exactly, e.g. '
           '{"from":"A","to":"B"}. Use one item per requested edge; close a polygon from the last '
-          'vertex to the first, and add diagonals only when requested.',
+          'vertex to the first, and add diagonals only when requested. Use style solid for visible edges, dashed '
+          'for hidden/auxiliary edges, dotted for projection guides, or dash_dot for centerlines/symmetry axes; '
+          'color may be default, red, orange, green, teal, blue, purple, pink, gray or black.',
       'maxItems': SpatialPlot.maxSegments,
       'items': objectSchema(
         {
           'from': {'type': 'string', 'maxLength': 40},
           'to': {'type': 'string', 'maxLength': 40},
-          'dashed': {'type': 'boolean'},
+          'style': {
+            'type': 'string',
+            'enum': [for (final style in PlotLineStyle.values) style.jsonName],
+            'description': 'solid (default), dashed, dotted or dash_dot.',
+          },
+          'color': {
+            'type': 'string',
+            'enum': [for (final color in PlotLineColor.values) color.jsonName],
+            'description':
+                'Line color token. Defaults to theme; choose a palette name only when it clarifies the figure.',
+          },
         },
         required: ['from', 'to'],
       ),

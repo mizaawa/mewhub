@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mewhub/core/i18n.dart';
 import 'package:mewhub/tools/cartesian_plot.dart';
+import 'package:mewhub/tools/plot_segment_style.dart';
 import 'package:mewhub/ui/theme.dart';
 import 'package:mewhub/ui/widgets/cartesian_plot_view.dart';
+import 'package:mewhub/ui/widgets/plot_segment_painter.dart';
 
 void main() {
   setUp(() => I18n.apply(AppLang.zh));
@@ -16,6 +18,16 @@ void main() {
       MaterialApp(theme: dark ? MewTheme.dark(3) : MewTheme.light(0), home: child);
 
   group('geometry', () {
+    test('named segment colors keep their contrast in the dark theme', () {
+      final lightInk = CartesianPlotStyle.of(MewTheme.light(0)).ink;
+      final darkInk = CartesianPlotStyle.of(MewTheme.dark(0)).ink;
+      expect(resolvePlotLineColor(PlotLineColor.gray, darkInk).computeLuminance(), greaterThan(.5));
+      expect(resolvePlotLineColor(PlotLineColor.green, darkInk).computeLuminance(), greaterThan(.3));
+      expect(resolvePlotLineColor(PlotLineColor.blue, darkInk).computeLuminance(), greaterThan(.3));
+      expect(resolvePlotLineColor(PlotLineColor.black, darkInk), darkInk);
+      expect(resolvePlotLineColor(PlotLineColor.black, lightInk).computeLuminance(), lessThan(.1));
+    });
+
     test('a window close to the canvas shape keeps equal units and fills the canvas', () {
       // The old fit left blank bands beside a square window on a tall canvas.
       const window = Rect.fromLTRB(-10, -10, 10, 10);
@@ -128,8 +140,9 @@ void main() {
         PlotPoint(x: 0, y: 3, label: 'P_1', showCoordinates: false),
       ],
       segments: const [
-        PlotSegment(from: 'A', to: "A'"),
-        PlotSegment(from: "A'", to: 'P_1', dashed: true),
+        PlotSegment(from: 'A', to: "A'", style: PlotLineStyle.dashDot, color: PlotLineColor.pink),
+        PlotSegment(from: "A'", to: 'P_1', style: PlotLineStyle.dotted, color: PlotLineColor.teal),
+        PlotSegment(from: 'P_1', to: 'A', dashed: true, color: PlotLineColor.red),
       ],
       xMin: -4,
       xMax: 4,

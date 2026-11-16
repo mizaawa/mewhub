@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,9 +9,11 @@ import 'package:mewhub/core/i18n.dart';
 import 'package:mewhub/data/assistant.dart';
 import 'package:mewhub/tools/local_tools.dart';
 import 'package:mewhub/tools/plot_expression.dart';
+import 'package:mewhub/tools/plot_segment_style.dart';
 import 'package:mewhub/tools/spatial_plot.dart';
 import 'package:mewhub/ui/chat/tool_card.dart';
 import 'package:mewhub/ui/theme.dart';
+import 'package:mewhub/ui/widgets/cartesian_plot_view.dart';
 import 'package:mewhub/ui/widgets/spatial_plot_view.dart';
 
 void main() {
@@ -67,6 +70,57 @@ void main() {
       expect(screenSpacing(zoomed), inInclusiveRange(18, 75));
       expect(screenSpacing(zoomed), closeTo(screenSpacing(normal), 12));
     });
+
+    test('uses orthographic geometry and extends the XY grid across the viewport', () {
+      const size = Size(390, 844);
+      final projection = SpatialProjection(size: size, plot: plot);
+      final bounds = projection.xyPlaneWorldBounds(0);
+      expect(bounds, isNotNull);
+      expect(bounds!.width, greaterThan(plot.xMax - plot.xMin));
+      expect(bounds.height, greaterThan(plot.yMax - plot.yMin));
+      for (final fixedX in [true, false]) {
+        final line = projection.xyGridLine(
+          fixedX: fixedX,
+          value: fixedX ? (bounds.left + bounds.right) / 2 : (bounds.top + bounds.bottom) / 2,
+          z: 0,
+        );
+        expect(line, isNotNull);
+        expect(
+          line!.$1.dx.abs() < 1e-5 ||
+              line.$1.dy.abs() < 1e-5 ||
+              (line.$1.dx - size.width).abs() < 1e-5 ||
+              (line.$1.dy - size.height).abs() < 1e-5,
+          isTrue,
+        );
+        expect(
+          line.$2.dx.abs() < 1e-5 ||
+              line.$2.dy.abs() < 1e-5 ||
+              (line.$2.dx - size.width).abs() < 1e-5 ||
+              (line.$2.dy - size.height).abs() < 1e-5,
+          isTrue,
+        );
+      }
+
+      final cube = SpatialPlot(xMin: -1, xMax: 1, yMin: -1, yMax: 1, zMin: -1, zMax: 1);
+      final cubeProjection = SpatialProjection(size: size, plot: cube);
+      double edgeLength(double y, double z) =>
+          (cubeProjection.project(1, y, z)!.at - cubeProjection.project(-1, y, z)!.at).distance;
+      expect(edgeLength(-1, -1), closeTo(edgeLength(1, 1), 1e-8));
+    });
+
+    test('safely skips the XY grid when the plane is viewed edge-on', () {
+      const size = Size(390, 844);
+      final projection = SpatialProjection(size: size, plot: plot, pitch: 0);
+      expect(projection.xyPlaneWorldBounds(0), isNull);
+      final picture = ui.PictureRecorder();
+      SpatialPlotPainter(
+        plot: plot,
+        style: CartesianPlotStyle.of(MewTheme.light(0)),
+        size: size,
+        pitch: 0,
+      ).paint(Canvas(picture), size);
+      picture.endRecording().dispose();
+    });
   });
 
   group('spatial tool and persistence', () {
@@ -77,9 +131,13 @@ void main() {
 
       final spatial = tools.last;
       expect(spatial.promptHint, contains('close the outline from the last vertex back to the first'));
+      expect(spatial.promptHint, contains('dotted for projection guides'));
       expect(spatial.description, contains('omit unrequested diagonals'));
       final segments = (spatial.parameters['properties'] as Map)['segments'] as Map;
       expect(segments['description'], contains('Each item joins two existing point labels exactly'));
+      final properties = (segments['items'] as Map)['properties'] as Map;
+      expect(properties['style']['enum'], ['solid', 'dashed', 'dotted', 'dash_dot']);
+      expect(properties['color']['enum'], containsAll(['default', 'red', 'teal', 'blue', 'purple']));
     });
 
     test('serializes a surface, 3D points and segments', () async {
@@ -93,6 +151,7 @@ void main() {
           ],
           'segments': [
             {'from': 'A', 'to': 'B', 'dashed': true},
+            {'from': 'A', 'to': 'B', 'style': 'dash_dot', 'color': 'purple'},
           ],
           'x_min': -2,
           'x_max': 2,
@@ -107,7 +166,8 @@ void main() {
       final plot = SpatialPlot.fromJson(result['plot'] as Map<String, dynamic>);
       expect(plot.expressions.single.evaluate(2, 1), 3);
       expect(plot.points.map((p) => p.caption), ['A (1, 0, 1)', 'B']);
-      expect(plot.segments.single.dashed, isTrue);
+      expect(plot.segments.map((segment) => segment.style), [PlotLineStyle.dashed, PlotLineStyle.dashDot]);
+      expect(plot.segments.last.color, PlotLineColor.purple);
       expect(SpatialPlot.fromJson(jsonDecode(jsonEncode(plot.toJson()))), plot);
       expect(plot.copyWith(zMax: 10), isNot(plot));
     });
@@ -283,6 +343,34 @@ void main() {
         }
       }
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('spatial segment patterns and colors render without errors', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final plot = SpatialPlot(
+      points: const [
+        SpatialPoint(x: -2, y: -1, z: 0, label: 'A'),
+        SpatialPoint(x: 2, y: -1, z: 0, label: 'B'),
+        SpatialPoint(x: 2, y: 1, z: 2, label: 'C'),
+        SpatialPoint(x: -2, y: 1, z: 2, label: 'D'),
+      ],
+      segments: const [
+        SpatialSegment(from: 'A', to: 'B', style: PlotLineStyle.solid, color: PlotLineColor.blue),
+        SpatialSegment(from: 'B', to: 'C', style: PlotLineStyle.dashed, color: PlotLineColor.orange),
+        SpatialSegment(from: 'C', to: 'D', style: PlotLineStyle.dotted, color: PlotLineColor.green),
+        SpatialSegment(from: 'D', to: 'A', style: PlotLineStyle.dashDot, color: PlotLineColor.purple),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: MewTheme.light(0),
+        home: SpatialPlotPage(initialPlot: plot),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 

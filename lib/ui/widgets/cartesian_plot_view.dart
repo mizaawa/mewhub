@@ -11,6 +11,8 @@ import '../../core/attachments.dart';
 import '../../core/i18n.dart';
 import '../../tools/cartesian_plot.dart';
 import '../../tools/plot_expression.dart';
+import '../../tools/plot_segment_style.dart';
+import 'plot_segment_painter.dart';
 import '../theme.dart';
 
 String _title(CartesianPlot plot) => plot.title.isEmpty ? t('平面直角坐标系', 'Cartesian plane') : prettyPlotTitle(plot.title);
@@ -1250,26 +1252,11 @@ class CartesianPlotPainter extends CustomPainter {
       final to = plot.pointNamed(segment.to);
       final a = g.toScreen(Offset(from.x, from.y));
       final b = g.toScreen(Offset(to.x, to.y));
-      // Only the part on the canvas is drawn: zoomed in, a segment can be
-      // millions of pixels long.
-      final visible = clipSegment(a, b, (Offset.zero & size).inflate(8));
-      if (visible == null) continue;
-      final (t0, t1) = visible;
       final paint = Paint()
-        ..color = style.ink.withValues(alpha: .78)
-        ..strokeWidth = segment.dashed ? 1.5 : 1.8
+        ..color = resolvePlotLineColor(segment.color, style.ink).withValues(alpha: .88)
+        ..strokeWidth = segment.style == PlotLineStyle.dotted ? 2.0 : 1.8
         ..strokeCap = StrokeCap.round;
-      if (!segment.dashed) {
-        canvas.drawLine(Offset.lerp(a, b, t0)!, Offset.lerp(a, b, t1)!, paint);
-        continue;
-      }
-      final length = (b - a).distance;
-      if (length == 0) continue;
-      final direction = (b - a) / length;
-      // Dashes keep their phase from the first point while panning.
-      for (var d = (t0 * length / 10).floor() * 10.0; d < t1 * length; d += 10) {
-        canvas.drawLine(a + direction * d, a + direction * math.min(d + 6, length), paint);
-      }
+      drawPlotSegment(canvas, a, b, paint, segment.style, (Offset.zero & size).inflate(8));
     }
   }
 
