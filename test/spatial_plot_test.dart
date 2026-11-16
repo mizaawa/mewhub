@@ -34,11 +34,52 @@ void main() {
     });
   });
 
+  group('spatial camera projection', () {
+    final plot = SpatialPlot.example();
+
+    test('extends every XYZ axis across the viewport', () {
+      const size = Size(390, 844);
+      final projection = SpatialProjection(size: size, plot: plot);
+      for (final axis in SpatialAxis.values) {
+        final line = projection.axisAcrossCanvas(axis, 0, 0, 0);
+        expect(line, isNotNull, reason: '$axis should cross the visible canvas');
+        final (a, b) = line!;
+        bool onEdge(Offset p) =>
+            p.dx.abs() < 1e-6 ||
+            (p.dx - size.width).abs() < 1e-6 ||
+            p.dy.abs() < 1e-6 ||
+            (p.dy - size.height).abs() < 1e-6;
+        expect(onEdge(a), isTrue);
+        expect(onEdge(b), isTrue);
+        expect((b - a).distance, greaterThan(100));
+      }
+    });
+
+    test('keeps the XY grid spacing steady as the camera zooms', () {
+      const size = Size(390, 844);
+      final normal = SpatialProjection(size: size, plot: plot);
+      final zoomed = SpatialProjection(size: size, plot: plot, zoom: 3);
+      expect(zoomed.gridStep, lessThan(normal.gridStep));
+
+      double screenSpacing(SpatialProjection projection) =>
+          (projection.project(0, 0, 0)!.at - projection.project(projection.gridStep, 0, 0)!.at).distance;
+      expect(screenSpacing(normal), inInclusiveRange(18, 75));
+      expect(screenSpacing(zoomed), inInclusiveRange(18, 75));
+      expect(screenSpacing(zoomed), closeTo(screenSpacing(normal), 12));
+    });
+  });
+
   group('spatial tool and persistence', () {
     test('the single switch registers both coordinate tools', () {
       final tools = buildLocalTools({LocalTool.cartesianPlot});
       expect(tools.map((tool) => tool.name), ['plot_cartesian', 'plot_spatial']);
       expect(buildLocalTools(const {}).where((tool) => tool.name.startsWith('plot_')), isEmpty);
+
+      final spatial = tools.last;
+      expect(spatial.promptHint, contains('close the outline from the last vertex back to the first'));
+      expect(spatial.description, contains('omit unrequested diagonals'));
+      final segments = (spatial.parameters['properties'] as Map)['segments'] as Map;
+      expect(segments['description'], contains('Each item joins two existing point labels exactly'));
     });
 
     test('serializes a surface, 3D points and segments', () async {

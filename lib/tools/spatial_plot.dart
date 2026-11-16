@@ -250,6 +250,19 @@ String _text(Object? value, String name, int limit) {
   return value.trim();
 }
 
+String spatialPlotPromptHint() =>
+    '<spatial_graphs>\n'
+    'For geometry questions where the user asks to connect, join, draw edges between, or form a shape from named points, '
+    'call plot_spatial with every vertex in points and every requested straight edge in segments; points alone draw only '
+    'dots and never connect automatically. Each segment is one '
+    '{"from":"A","to":"B"} pair and both names must exactly match point labels. For a polygon, connect consecutive '
+    'vertices and close the outline from the last vertex back to the first; do not add diagonals unless requested. '
+    'Example square A(0,0,0), B(2,0,0), C(2,2,0), D(0,2,0): points A–D and segments '
+    '[{"from":"A","to":"B"},{"from":"B","to":"C"},{"from":"C","to":"D"},{"from":"D","to":"A"}]. '
+    'For a triangle ABC use AB, BC, CA. For a vector from O to A use OA. When the request specifies a particular '
+    'construction, preserve its labels and include only those edges. Choose ranges that include all vertices.\n'
+    '</spatial_graphs>';
+
 AppTool buildSpatialPlotTool() => AppTool(
   name: 'plot_spatial',
   displayName: '3D Cartesian coordinate plot',
@@ -260,7 +273,10 @@ AppTool buildSpatialPlotTool() => AppTool(
       'and pan with two fingers. Use plot_cartesian instead for a two-dimensional y=f(x) graph. '
       'Use explicit x and y arguments in sin(x), cos(y), sqrt(x^2+y^2), etc.; never use parameters other than x '
       'and y. Choose ranges that contain the useful surface and all important points. Point labels are names only '
-      '(A, B, P_1, O), without repeated coordinates. Do not add an image link or repeat the call arguments.',
+      '(A, B, P_1, O), without repeated coordinates. For requested line connections, define each endpoint as a point '
+      'and give each edge in segments as {from: label, to: label}; close polygon outlines last-to-first and omit '
+      'unrequested diagonals. Do not add an image link or repeat the call arguments.',
+  promptHint: spatialPlotPromptHint(),
   parameters: objectSchema({
     'title': {'type': 'string', 'description': 'Short plain-text title in the user\'s language.', 'maxLength': 100},
     'surfaces': {
@@ -289,7 +305,10 @@ AppTool buildSpatialPlotTool() => AppTool(
     },
     'segments': {
       'type': 'array',
-      'description': 'Up to 32 straight 3D segments joining labels in points.',
+      'description':
+          'Up to 32 straight 3D edges. Each item joins two existing point labels exactly, e.g. '
+          '{"from":"A","to":"B"}. Use one item per requested edge; close a polygon from the last '
+          'vertex to the first, and add diagonals only when requested.',
       'maxItems': SpatialPlot.maxSegments,
       'items': objectSchema(
         {

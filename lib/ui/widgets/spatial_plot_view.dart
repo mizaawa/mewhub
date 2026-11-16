@@ -65,6 +65,82 @@ class SpatialProjection {
     return math.min(size.width * .84 / width, size.height * .84 / height);
   }
 
+  /// World-space interval that keeps adjacent XY grid lines near 34 logical px.
+  double get gridStep {
+    final pixelsPerUnit = _fitScale * zoom / _halfSpan;
+    final raw = 34 / pixelsPerUnit;
+    final magnitude = math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
+    final normalized = raw / magnitude;
+    final factor = normalized < 1.5
+        ? 1
+        : normalized < 3.5
+        ? 2
+        : normalized < 7.5
+        ? 5
+        : 10;
+    return factor * magnitude;
+  }
+
+  /// The axis line through [x], [y], [z], clipped to the canvas edges.
+  (Offset, Offset)? axisAcrossCanvas(SpatialAxis axis, double x, double y, double z) {
+    final anchor = project(x, y, z)?.at;
+    if (anchor == null) return null;
+    final delta = _halfSpan * .1;
+    final next = switch (axis) {
+      SpatialAxis.x => project(x + delta, y, z),
+      SpatialAxis.y => project(x, y + delta, z),
+      SpatialAxis.z => project(x, y, z + delta),
+    };
+    if (next == null) return null;
+    return clipInfiniteLineToRect(anchor, next.at - anchor, Offset.zero & size);
+  }
+
+  static (Offset, Offset)? clipInfiniteLineToRect(Offset anchor, Offset direction, Rect bounds) {
+    if (!anchor.isFinite || !direction.isFinite || direction.distanceSquared < 1e-12) return null;
+    final intersections = <Offset>[];
+    void add(double x, double y) {
+      final point = Offset(x, y);
+      if (!point.isFinite ||
+          x < bounds.left - 1e-6 ||
+          x > bounds.right + 1e-6 ||
+          y < bounds.top - 1e-6 ||
+          y > bounds.bottom + 1e-6 ||
+          intersections.any((old) => (old - point).distance < 1e-5)) {
+        return;
+      }
+      intersections.add(point);
+    }
+
+    if (direction.dx.abs() > 1e-9) {
+      for (final x in [bounds.left, bounds.right]) {
+        final t = (x - anchor.dx) / direction.dx;
+        add(x, anchor.dy + t * direction.dy);
+      }
+    }
+    if (direction.dy.abs() > 1e-9) {
+      for (final y in [bounds.top, bounds.bottom]) {
+        final t = (y - anchor.dy) / direction.dy;
+        add(anchor.dx + t * direction.dx, y);
+      }
+    }
+    if (intersections.length < 2) return null;
+    var first = intersections.first;
+    var second = intersections[1];
+    var farthest = (first - second).distanceSquared;
+    for (var i = 0; i < intersections.length; i++) {
+      for (var j = i + 1; j < intersections.length; j++) {
+        final distance = (intersections[i] - intersections[j]).distanceSquared;
+        if (distance > farthest) {
+          farthest = distance;
+          first = intersections[i];
+          second = intersections[j];
+        }
+      }
+    }
+    final dot = (second - first).dx * direction.dx + (second - first).dy * direction.dy;
+    return dot >= 0 ? (first, second) : (second, first);
+  }
+
   SpatialProjectedPoint? project(double x, double y, double z) {
     if (!x.isFinite || !y.isFinite || !z.isFinite) return null;
     final unit = _halfSpan;
@@ -84,6 +160,8 @@ class SpatialProjectedPoint {
   final Offset at;
   final double depth;
 }
+
+enum SpatialAxis { x, y, z }
 
 typedef _SpatialGestureUpdate = void Function(Offset panDelta, double scaleRatio, int pointerCount);
 
@@ -674,53 +752,81 @@ class SpatialPlotPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, Paint()..color = style.paper);
     final g = projection;
     Offset? at(double x, double y, double z) => g.project(x, y, z)?.at;
-    final baseZ = 0 >= plot.zMin && 0 <= plot.zMax ? 0.0 : plot.zMin;
-    for (var i = 0; i <= 8; i++) {
-      final x = plot.xMin + (plot.xMax - plot.xMin) * i / 8;
-      final y = plot.yMin + (plot.yMax - plot.yMin) * i / 8;
-      final major = i.isEven;
-      final grid = Paint()
-        ..color = major ? style.majorGrid.withValues(alpha: .52) : style.grid
-        ..strokeWidth = major ? .9 : .65;
-      _line(canvas, at(x, plot.yMin, baseZ), at(x, plot.yMax, baseZ), grid);
-      _line(canvas, at(plot.xMin, y, baseZ), at(plot.yMax, y, baseZ), grid);
+    final ox = plot.xMin <= 0 && plot.xMax >= 0
+        ? 0.0
+        : plot.xMin > 0
+        ? plot.xMin
+        : plot.xMax;
+    final oy = plot.yMin <= 0 && plot.yMax >= 0
+        ? 0.0
+        : plot.yMin > 0
+        ? plot.yMin
+        : plot.yMax;
+    final oz = plot.zMin <= 0 && plot.zMax >= 0
+        ? 0.0
+        : plot.zMin > 0
+        ? plot.zMin
+        : plot.zMax;
+    final baseZ = oz;
+    final plane = Path();
+    final corners = [(plot.xMin, plot.yMin), (plot.xMax, plot.yMin), (plot.xMax, plot.yMax), (plot.xMin, plot.yMax)];
+    final firstCorner = at(corners.first.$1, corners.first.$2, baseZ);
+    if (firstCorner != null) {
+      plane.moveTo(firstCorner.dx, firstCorner.dy);
+      for (final (x, y) in corners.skip(1)) {
+        final point = at(x, y, baseZ);
+        if (point != null) plane.lineTo(point.dx, point.dy);
+      }
+      plane.close();
+      canvas.drawPath(plane, Paint()..color = style.seriesAt(0).withValues(alpha: .045));
     }
-    final edge = Paint()
-      ..color = style.axis.withValues(alpha: .25)
-      ..strokeWidth = 1.1;
-    final corners = [
-      for (final x in [plot.xMin, plot.xMax])
-        for (final y in [plot.yMin, plot.yMax]) (x, y),
-    ];
-    for (final (x, y) in corners) {
-      _line(canvas, at(x, y, plot.zMin), at(x, y, plot.zMax), edge);
+
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    var step = g.gridStep;
+    double niceStep(double raw) {
+      final magnitude = math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
+      final normalized = raw / magnitude;
+      final factor = normalized < 1.5
+          ? 1
+          : normalized < 3.5
+          ? 2
+          : normalized < 7.5
+          ? 5
+          : 10;
+      return factor * magnitude;
     }
-    for (final z in [plot.zMin, plot.zMax]) {
-      for (var i = 0; i < 4; i++) {
-        _line(
-          canvas,
-          at(corners[i].$1, corners[i].$2, z),
-          at(corners[(i + 1) % 4].$1, corners[(i + 1) % 4].$2, z),
-          edge,
-        );
+
+    if ((plot.xMax - plot.xMin) / step > 400 || (plot.yMax - plot.yMin) / step > 400) {
+      step = niceStep(math.max(plot.xMax - plot.xMin, plot.yMax - plot.yMin) / 400);
+    }
+    void drawGridAxis(double min, double max, Offset? Function(double) lineStart, Offset? Function(double) lineEnd) {
+      final first = (min / step).ceil() * step;
+      for (var i = 0; i < 400; i++) {
+        final value = first + i * step;
+        if (value > max + step * 1e-9) break;
+        final major = (value / step).round() % 5 == 0;
+        final paint = Paint()
+          ..color = major ? style.majorGrid.withValues(alpha: .48) : style.grid
+          ..strokeWidth = major ? .9 : .65;
+        _line(canvas, lineStart(value), lineEnd(value), paint);
       }
     }
+
+    drawGridAxis(plot.xMin, plot.xMax, (x) => at(x, plot.yMin, baseZ), (x) => at(x, plot.yMax, baseZ));
+    drawGridAxis(plot.yMin, plot.yMax, (y) => at(plot.xMin, y, baseZ), (y) => at(plot.xMax, y, baseZ));
     _paintSurfaces(canvas, g, size);
 
     final axes = Paint()
       ..color = style.axis
-      ..strokeWidth = 1.5;
-    double zeroOnAxis(double min, double max) => min <= 0 && max >= 0
-        ? 0
-        : min > 0
-        ? min
-        : max;
-    final ox = zeroOnAxis(plot.xMin, plot.xMax);
-    final oy = zeroOnAxis(plot.yMin, plot.yMax);
-    final oz = zeroOnAxis(plot.zMin, plot.zMax);
-    _line(canvas, at(plot.xMin, oy, oz), at(plot.xMax, oy, oz), axes);
-    _line(canvas, at(ox, plot.yMin, oz), at(ox, plot.yMax, oz), axes);
-    _line(canvas, at(ox, oy, plot.zMin), at(ox, oy, plot.zMax), axes);
+      ..strokeWidth = 1.7;
+    final xLine = g.axisAcrossCanvas(SpatialAxis.x, ox, oy, oz);
+    final yLine = g.axisAcrossCanvas(SpatialAxis.y, ox, oy, oz);
+    final zLine = g.axisAcrossCanvas(SpatialAxis.z, ox, oy, oz);
+    if (xLine != null) canvas.drawLine(xLine.$1, xLine.$2, axes);
+    if (yLine != null) canvas.drawLine(yLine.$1, yLine.$2, axes);
+    if (zLine != null) canvas.drawLine(zLine.$1, zLine.$2, axes);
+    canvas.restore();
 
     for (final segment in plot.segments) {
       final from = plot.pointNamed(segment.from);
@@ -745,9 +851,9 @@ class SpatialPlotPainter extends CustomPainter {
       canvas.drawCircle(point, 3.5, Paint()..color = style.ink);
       if (p.caption.isNotEmpty) _label(canvas, p.caption, point + const Offset(8, -18), style.ink, size);
     }
-    _label(canvas, 'x', at(plot.xMax, oy, oz), style.ink, size);
-    _label(canvas, 'y', at(ox, plot.yMax, oz), style.ink, size);
-    _label(canvas, 'z', at(ox, oy, plot.zMax), style.ink, size);
+    _label(canvas, 'x', xLine?.$2, style.ink, size);
+    _label(canvas, 'y', yLine?.$2, style.ink, size);
+    _label(canvas, 'z', zLine?.$2, style.ink, size);
     _label(canvas, 'O', at(ox, oy, oz), style.mutedInk, size, offset: const Offset(6, 4));
     double tickStep(double min, double max) {
       final raw = (max - min) / 4;
