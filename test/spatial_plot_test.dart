@@ -170,8 +170,8 @@ void main() {
     await tester.drag(find.byKey(const ValueKey('spatial-canvas')), const Offset(70, 20));
     await tester.pumpAndSettle();
     final rotated = projection();
-    expect(rotated.yaw, isNot(initial.yaw));
-    expect(rotated.pitch, greaterThan(initial.pitch));
+    expect(rotated.yaw, closeTo(initial.yaw + 70 / 140, .02));
+    expect(rotated.pitch, closeTo(initial.pitch + 20 / 140, .02));
     expect(rotated.pan, initial.pan);
     expect(rotated.zoom, initial.zoom);
 
@@ -181,12 +181,18 @@ void main() {
     final second = await tester.startGesture(center + const Offset(30, 0));
     await tester.pump();
     await first.moveBy(const Offset(30, 20));
+    await tester.pump();
     await second.moveBy(const Offset(30, 20));
     await tester.pumpAndSettle();
     final panned = projection();
     expect(panned.pan, rotated.pan + const Offset(30, 20));
     expect(panned.yaw, rotated.yaw);
     expect(panned.pitch, rotated.pitch);
+    final beforePinch = panned.zoom;
+    await first.moveBy(const Offset(-15, 0));
+    await second.moveBy(const Offset(15, 0));
+    await tester.pumpAndSettle();
+    expect(projection().zoom, greaterThan(beforePinch));
     await first.up();
     await second.up();
     await tester.pumpAndSettle();
@@ -199,6 +205,76 @@ void main() {
     expect(projection().zoom, 1);
     expect(projection().pan, Offset.zero);
     expect(projection().yaw, -.65);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('asymmetric negative coordinate ranges render inside the canvas', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final plot = SpatialPlot(
+      title: '偏心范围',
+      xMin: -9,
+      xMax: -2,
+      yMin: 1,
+      yMax: 5,
+      zMin: -7,
+      zMax: -3,
+      points: const [SpatialPoint(x: -4, y: 2, z: -5, label: 'P')],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: MewTheme.light(0),
+        home: SpatialPlotPage(initialPlot: plot),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final paint = tester.widget<CustomPaint>(
+      find.descendant(of: find.byKey(const ValueKey('spatial-canvas')), matching: find.byType(CustomPaint)),
+    );
+    final projection = (paint.painter as SpatialPlotPainter).projection;
+    final bounds = Offset.zero & projection.size;
+    for (final x in [plot.xMin, plot.xMax]) {
+      for (final y in [plot.yMin, plot.yMax]) {
+        for (final z in [plot.zMin, plot.zMax]) {
+          expect(bounds.contains(projection.project(x, y, z)!.at), isTrue);
+        }
+      }
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('inline plot orbits without scrolling its chat container', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: MewTheme.light(0),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                const SizedBox(height: 24),
+                SpatialPlotCard(plot: SpatialPlot.example()),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    final beforeScroll = scrollable.position.pixels;
+    final paint = tester.widget<CustomPaint>(find.byKey(const ValueKey('spatial-preview')));
+    final initial = (paint.painter as SpatialPlotPainter).projection;
+    await tester.drag(find.byKey(const ValueKey('spatial-preview')), const Offset(0, 80));
+    await tester.pumpAndSettle();
+    final after = tester.widget<CustomPaint>(find.byKey(const ValueKey('spatial-preview')));
+    final rotated = (after.painter as SpatialPlotPainter).projection;
+    expect(rotated.pitch, greaterThan(initial.pitch));
+    expect(scrollable.position.pixels, beforeScroll);
     expect(tester.takeException(), isNull);
   });
 

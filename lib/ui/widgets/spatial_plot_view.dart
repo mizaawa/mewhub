@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/i18n.dart';
@@ -29,20 +30,52 @@ class SpatialProjection {
   final double zoom;
   final Offset pan;
 
-  SpatialProjectedPoint? project(double x, double y, double z) {
-    if (!x.isFinite || !y.isFinite || !z.isFinite) return null;
-    final nx = (x - (plot.xMin + plot.xMax) / 2) / ((plot.xMax - plot.xMin) / 2);
-    final ny = (y - (plot.yMin + plot.yMax) / 2) / ((plot.yMax - plot.yMin) / 2);
-    final nz = (z - (plot.zMin + plot.zMax) / 2) / ((plot.zMax - plot.zMin) / 2);
+  // Keep the world-space scale equal on all axes. Normalizing each range
+  // independently makes a 1×1×10 box look like a cube and distorts geometry.
+  double get _halfSpan => math.max(plot.xMax - plot.xMin, math.max(plot.yMax - plot.yMin, plot.zMax - plot.zMin)) / 2;
+
+  Offset _projectUnit(double nx, double ny, double nz) {
     final rx = nx * math.cos(yaw) - ny * math.sin(yaw);
     final ry = nx * math.sin(yaw) + ny * math.cos(yaw);
     final screenY = ry * math.sin(pitch) + nz * math.cos(pitch);
     final depth = ry * math.cos(pitch) - nz * math.sin(pitch);
-    // Perspective stays bounded while rotating and gives nearer objects a clear size cue.
+    // Perspective remains bounded while rotating and gives nearer objects a cue.
     final perspective = 5.5 / (5.5 - depth * .65);
-    final scale = math.min(size.width, size.height) * .31 * zoom * perspective;
+    return Offset(rx * perspective, -screenY * perspective);
+  }
+
+  /// Fit the projected coordinate box to both dimensions, including portrait
+  /// full-screen canvases where the available height greatly exceeds width.
+  double get _fitScale {
+    final unit = _halfSpan;
+    final xMid = (plot.xMin + plot.xMax) / 2;
+    final yMid = (plot.yMin + plot.yMax) / 2;
+    final zMid = (plot.zMin + plot.zMax) / 2;
+    final corners = [
+      for (final x in [(plot.xMin - xMid) / unit, (plot.xMax - xMid) / unit])
+        for (final y in [(plot.yMin - yMid) / unit, (plot.yMax - yMid) / unit])
+          for (final z in [(plot.zMin - zMid) / unit, (plot.zMax - zMid) / unit]) _projectUnit(x, y, z),
+    ];
+    final minX = corners.map((p) => p.dx).reduce(math.min);
+    final maxX = corners.map((p) => p.dx).reduce(math.max);
+    final minY = corners.map((p) => p.dy).reduce(math.min);
+    final maxY = corners.map((p) => p.dy).reduce(math.max);
+    final width = math.max(maxX - minX, .01);
+    final height = math.max(maxY - minY, .01);
+    return math.min(size.width * .84 / width, size.height * .84 / height);
+  }
+
+  SpatialProjectedPoint? project(double x, double y, double z) {
+    if (!x.isFinite || !y.isFinite || !z.isFinite) return null;
+    final unit = _halfSpan;
+    final nx = (x - (plot.xMin + plot.xMax) / 2) / unit;
+    final ny = (y - (plot.yMin + plot.yMax) / 2) / unit;
+    final nz = (z - (plot.zMin + plot.zMax) / 2) / unit;
+    final projected = _projectUnit(nx, ny, nz);
+    final scale = _fitScale * zoom;
     final center = size.center(Offset.zero) + pan;
-    return SpatialProjectedPoint(Offset(center.dx + rx * scale, center.dy - screenY * scale), depth);
+    final depth = (nx * math.sin(yaw) + ny * math.cos(yaw)) * math.cos(pitch) - nz * math.sin(pitch);
+    return SpatialProjectedPoint(center + projected * scale, depth);
   }
 }
 
@@ -51,6 +84,123 @@ class SpatialProjectedPoint {
   final Offset at;
   final double depth;
 }
+
+typedef _SpatialGestureUpdate = void Function(Offset panDelta, double scaleRatio, int pointerCount);
+
+/// Uses actual pointer positions for the camera gesture. ScaleGestureRecognizer
+/// reports a re-based centroid and scale when fingers join or lift, which can
+/// drop half of a pan in a scrollable chat card.
+class _SpatialGestureRecognizer extends OneSequenceGestureRecognizer {
+  _SpatialGestureRecognizer({super.debugOwner});
+
+  _SpatialGestureUpdate? onUpdate;
+
+  final Map<int, Offset> _positions = {};
+  final Map<int, Offset> _initialPositions = {};
+  bool _accepted = false;
+
+  @override
+  String get debugDescription => 'spatial camera';
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _positions[event.pointer] = event.localPosition;
+    _initialPositions[event.pointer] = event.localPosition;
+    super.addAllowedPointer(event);
+    if (_accepted) resolvePointer(event.pointer, GestureDisposition.accepted);
+  }
+
+  Offset _focalPoint(Map<int, Offset> positions) {
+    if (positions.isEmpty) return Offset.zero;
+    return positions.values.reduce((a, b) => a + b) / positions.length.toDouble();
+  }
+
+  double _spread(Map<int, Offset> positions, Offset focal) {
+    if (positions.length < 2) return 0;
+    return positions.values.map((point) => (point - focal).distance).reduce((a, b) => a + b) / positions.length;
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerDownEvent) {
+      _positions[event.pointer] = event.localPosition;
+      _initialPositions[event.pointer] = event.localPosition;
+      return;
+    }
+    if (event is PointerMoveEvent && _positions.containsKey(event.pointer)) {
+      final previousFocal = _focalPoint(_positions);
+      final previousSpread = _spread(_positions, previousFocal);
+      _positions[event.pointer] = event.localPosition;
+      final focal = _focalPoint(_positions);
+      final delta = focal - previousFocal;
+      final spread = _spread(_positions, focal);
+      final scaleRatio = previousSpread > .1 ? spread / previousSpread : 1.0;
+      final travelled = (event.localPosition - _initialPositions[event.pointer]!).distance;
+
+      // Accept after a small, intentional drag so a one-finger orbit wins
+      // against the enclosing chat Scrollable. A tap still belongs to onTap.
+      if (!_accepted && (travelled > 8 || scaleRatio > 1.04 || scaleRatio < .96)) {
+        resolve(GestureDisposition.accepted);
+      }
+      if (_accepted && (delta.distanceSquared > 0 || scaleRatio != 1)) {
+        onUpdate?.call(delta, scaleRatio, _positions.length);
+      }
+    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _positions.remove(event.pointer);
+      _initialPositions.remove(event.pointer);
+    }
+    stopTrackingIfPointerNoLongerDown(event);
+  }
+
+  @override
+  void acceptGesture(int pointer) => _accepted = true;
+
+  @override
+  void rejectGesture(int pointer) {}
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    _positions.clear();
+    _initialPositions.clear();
+    _accepted = false;
+  }
+}
+
+/// Maintains a camera independently of the widget hosting it.
+class _SpatialCamera {
+  double yaw = -.65;
+  double pitch = .58;
+  double zoom = 1;
+  Offset pan = Offset.zero;
+
+  void update(Offset delta, double scaleRatio, int pointerCount) {
+    if (pointerCount >= 2) {
+      pan += delta;
+      if (scaleRatio.isFinite && scaleRatio > 0) zoom = (zoom * scaleRatio).clamp(.25, 12);
+    } else {
+      yaw += delta.dx / 140;
+      pitch = (pitch + delta.dy / 140).clamp(-1.35, 1.35);
+    }
+  }
+
+  void reset() {
+    yaw = -.65;
+    pitch = .58;
+    zoom = 1;
+    pan = Offset.zero;
+  }
+}
+
+Map<Type, GestureRecognizerFactory> _spatialGestureFactories(_SpatialCamera camera, VoidCallback changed) => {
+  _SpatialGestureRecognizer: GestureRecognizerFactoryWithHandlers<_SpatialGestureRecognizer>(
+    _SpatialGestureRecognizer.new,
+    (recognizer) => recognizer
+      ..onUpdate = (delta, scaleRatio, pointerCount) {
+        camera.update(delta, scaleRatio, pointerCount);
+        changed();
+      },
+  ),
+};
 
 class SpatialPlotCard extends StatefulWidget {
   const SpatialPlotCard({super.key, required this.plot, this.showHeader = true});
@@ -64,15 +214,7 @@ class SpatialPlotCard extends StatefulWidget {
 class _SpatialPlotCardState extends State<SpatialPlotCard> {
   SpatialPlot get plot => widget.plot;
   bool get showHeader => widget.showHeader;
-  double _yaw = -.65;
-  double _pitch = .58;
-  double _zoom = 1;
-  Offset _pan = Offset.zero;
-  Offset _gestureFocal = Offset.zero;
-  late double _gestureYaw;
-  late double _gesturePitch;
-  late double _gestureZoom;
-  late Offset _gesturePan;
+  final _camera = _SpatialCamera();
 
   @override
   Widget build(BuildContext context) {
@@ -119,24 +261,6 @@ class _SpatialPlotCardState extends State<SpatialPlotCard> {
               ),
             GestureDetector(
               onTap: open,
-              onScaleStart: (details) {
-                _gestureFocal = details.localFocalPoint;
-                _gestureYaw = _yaw;
-                _gesturePitch = _pitch;
-                _gestureZoom = _zoom;
-                _gesturePan = _pan;
-              },
-              onScaleUpdate: (details) {
-                setState(() {
-                  if (details.pointerCount >= 2) {
-                    _pan = _gesturePan + (details.localFocalPoint - _gestureFocal) * details.pointerCount.toDouble();
-                    _zoom = (_gestureZoom * details.scale).clamp(.25, 12);
-                  } else {
-                    _yaw = _gestureYaw + details.focalPointDelta.dx / 140;
-                    _pitch = (_gesturePitch + details.focalPointDelta.dy / 140).clamp(-1.35, 1.35);
-                  }
-                });
-              },
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final width = constraints.maxWidth;
@@ -144,18 +268,22 @@ class _SpatialPlotCardState extends State<SpatialPlotCard> {
                   return Semantics(
                     label: spatialPlotDescription(plot),
                     image: true,
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        key: const ValueKey('spatial-preview'),
-                        size: Size(width, height),
-                        painter: SpatialPlotPainter(
-                          plot: plot,
-                          style: style,
+                    child: RawGestureDetector(
+                      gestures: _spatialGestureFactories(_camera, () => setState(() {})),
+                      behavior: HitTestBehavior.opaque,
+                      child: RepaintBoundary(
+                        child: CustomPaint(
+                          key: const ValueKey('spatial-preview'),
                           size: Size(width, height),
-                          yaw: _yaw,
-                          pitch: _pitch,
-                          zoom: _zoom,
-                          pan: _pan,
+                          painter: SpatialPlotPainter(
+                            plot: plot,
+                            style: style,
+                            size: Size(width, height),
+                            yaw: _camera.yaw,
+                            pitch: _camera.pitch,
+                            zoom: _camera.zoom,
+                            pan: _camera.pan,
+                          ),
                         ),
                       ),
                     ),
@@ -231,22 +359,9 @@ class SpatialPlotPage extends StatefulWidget {
 
 class _SpatialPlotPageState extends State<SpatialPlotPage> {
   late SpatialPlot _plot = widget.initialPlot;
-  double _yaw = -.65;
-  double _pitch = .58;
-  double _zoom = 1;
-  Offset _pan = Offset.zero;
-  late double _gestureYaw;
-  late double _gesturePitch;
-  late double _gestureZoom;
-  late Offset _gesturePan;
-  Offset _gestureFocal = Offset.zero;
+  final _camera = _SpatialCamera();
 
-  void _reset() => setState(() {
-    _yaw = -.65;
-    _pitch = .58;
-    _zoom = 1;
-    _pan = Offset.zero;
-  });
+  void _reset() => setState(_camera.reset);
 
   Future<void> _edit() async {
     final result = await showModalBottomSheet<SpatialPlot>(
@@ -291,31 +406,10 @@ class _SpatialPlotPageState extends State<SpatialPlotPage> {
                     borderRadius: BorderRadius.circular(22),
                     child: LayoutBuilder(
                       builder: (context, c) {
-                        return GestureDetector(
+                        return RawGestureDetector(
                           key: const ValueKey('spatial-canvas'),
+                          gestures: _spatialGestureFactories(_camera, () => setState(() {})),
                           behavior: HitTestBehavior.opaque,
-                          onScaleStart: (details) {
-                            _gestureFocal = details.localFocalPoint;
-                            _gestureYaw = _yaw;
-                            _gesturePitch = _pitch;
-                            _gestureZoom = _zoom;
-                            _gesturePan = _pan;
-                          },
-                          onScaleUpdate: (details) {
-                            if (details.pointerCount >= 2) {
-                              setState(() {
-                                _pan =
-                                    _gesturePan +
-                                    (details.localFocalPoint - _gestureFocal) * details.pointerCount.toDouble();
-                                _zoom = (_gestureZoom * details.scale).clamp(.25, 12);
-                              });
-                            } else {
-                              setState(() {
-                                _yaw = _gestureYaw + details.focalPointDelta.dx / 140;
-                                _pitch = (_gesturePitch + details.focalPointDelta.dy / 140).clamp(-1.35, 1.35);
-                              });
-                            }
-                          },
                           child: Semantics(
                             label: spatialPlotDescription(_plot),
                             image: true,
@@ -326,10 +420,10 @@ class _SpatialPlotPageState extends State<SpatialPlotPage> {
                                   plot: _plot,
                                   style: style,
                                   size: c.biggest,
-                                  yaw: _yaw,
-                                  pitch: _pitch,
-                                  zoom: _zoom,
-                                  pan: _pan,
+                                  yaw: _camera.yaw,
+                                  pitch: _camera.pitch,
+                                  zoom: _camera.zoom,
+                                  pan: _camera.pan,
                                 ),
                               ),
                             ),
@@ -359,7 +453,7 @@ class _SpatialPlotPageState extends State<SpatialPlotPage> {
                   IconButton(
                     key: const ValueKey('spatial-zoom-out'),
                     tooltip: t('缩小', 'Zoom out'),
-                    onPressed: () => setState(() => _zoom = (_zoom / 1.3).clamp(.25, 12)),
+                    onPressed: () => setState(() => _camera.zoom = (_camera.zoom / 1.3).clamp(.25, 12)),
                     icon: const Icon(Icons.remove_rounded),
                   ),
                   IconButton(
@@ -371,7 +465,7 @@ class _SpatialPlotPageState extends State<SpatialPlotPage> {
                   IconButton(
                     key: const ValueKey('spatial-zoom-in'),
                     tooltip: t('放大', 'Zoom in'),
-                    onPressed: () => setState(() => _zoom = (_zoom * 1.3).clamp(.25, 12)),
+                    onPressed: () => setState(() => _camera.zoom = (_camera.zoom * 1.3).clamp(.25, 12)),
                     icon: const Icon(Icons.add_rounded),
                   ),
                 ],
@@ -581,18 +675,19 @@ class SpatialPlotPainter extends CustomPainter {
     final g = projection;
     Offset? at(double x, double y, double z) => g.project(x, y, z)?.at;
     final baseZ = 0 >= plot.zMin && 0 <= plot.zMax ? 0.0 : plot.zMin;
-    final grid = Paint()
-      ..color = style.grid
-      ..strokeWidth = .75;
-    for (var i = 0; i <= 10; i++) {
-      final x = plot.xMin + (plot.xMax - plot.xMin) * i / 10;
-      final y = plot.yMin + (plot.yMax - plot.yMin) * i / 10;
+    for (var i = 0; i <= 8; i++) {
+      final x = plot.xMin + (plot.xMax - plot.xMin) * i / 8;
+      final y = plot.yMin + (plot.yMax - plot.yMin) * i / 8;
+      final major = i.isEven;
+      final grid = Paint()
+        ..color = major ? style.majorGrid.withValues(alpha: .52) : style.grid
+        ..strokeWidth = major ? .9 : .65;
       _line(canvas, at(x, plot.yMin, baseZ), at(x, plot.yMax, baseZ), grid);
       _line(canvas, at(plot.xMin, y, baseZ), at(plot.yMax, y, baseZ), grid);
     }
     final edge = Paint()
-      ..color = style.majorGrid
-      ..strokeWidth = 1;
+      ..color = style.axis.withValues(alpha: .25)
+      ..strokeWidth = 1.1;
     final corners = [
       for (final x in [plot.xMin, plot.xMax])
         for (final y in [plot.yMin, plot.yMax]) (x, y),
@@ -615,9 +710,14 @@ class SpatialPlotPainter extends CustomPainter {
     final axes = Paint()
       ..color = style.axis
       ..strokeWidth = 1.5;
-    final ox = plot.xMin.clamp(0.0, plot.xMax);
-    final oy = plot.yMin.clamp(0.0, plot.yMax);
-    final oz = plot.zMin.clamp(0.0, plot.zMax);
+    double zeroOnAxis(double min, double max) => min <= 0 && max >= 0
+        ? 0
+        : min > 0
+        ? min
+        : max;
+    final ox = zeroOnAxis(plot.xMin, plot.xMax);
+    final oy = zeroOnAxis(plot.yMin, plot.yMax);
+    final oz = zeroOnAxis(plot.zMin, plot.zMax);
     _line(canvas, at(plot.xMin, oy, oz), at(plot.xMax, oy, oz), axes);
     _line(canvas, at(ox, plot.yMin, oz), at(ox, plot.yMax, oz), axes);
     _line(canvas, at(ox, oy, plot.zMin), at(ox, oy, plot.zMax), axes);
@@ -649,29 +749,39 @@ class SpatialPlotPainter extends CustomPainter {
     _label(canvas, 'y', at(ox, plot.yMax, oz), style.ink, size);
     _label(canvas, 'z', at(ox, oy, plot.zMax), style.ink, size);
     _label(canvas, 'O', at(ox, oy, oz), style.mutedInk, size, offset: const Offset(6, 4));
-    void axisTick(String axis, double x, double y, double z) {
-      final value = axis == 'x'
-          ? x
-          : axis == 'y'
-          ? y
-          : z;
-      _label(
-        canvas,
-        formatPlotNumber(value),
-        at(x, y, z),
-        style.mutedInk,
-        size,
-        fontSize: 10,
-        offset: const Offset(4, 6),
-      );
+    double tickStep(double min, double max) {
+      final raw = (max - min) / 4;
+      final magnitude = math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
+      final normalized = raw / magnitude;
+      final factor = normalized < 1.5
+          ? 1
+          : normalized < 3.5
+          ? 2
+          : normalized < 7.5
+          ? 5
+          : 10;
+      return factor * magnitude;
     }
 
-    axisTick('x', plot.xMin, oy, oz);
-    axisTick('x', plot.xMax, oy, oz);
-    axisTick('y', ox, plot.yMin, oz);
-    axisTick('y', ox, plot.yMax, oz);
-    axisTick('z', ox, oy, plot.zMin);
-    axisTick('z', ox, oy, plot.zMax);
+    void axisTicks(double min, double max, Offset? Function(double) pointAt, Offset labelOffset) {
+      final step = tickStep(min, max);
+      final first = (min / step).ceil() * step;
+      final paint = Paint()
+        ..color = style.axis
+        ..strokeWidth = 1.2;
+      for (var index = 0; index < 8; index++) {
+        final value = first + index * step;
+        if (value > max || (value - min).abs() < step * .03 || value.abs() < step * .03) continue;
+        final point = pointAt(value);
+        if (point == null) continue;
+        canvas.drawCircle(point, 1.6, paint);
+        _label(canvas, formatPlotNumber(value), point, style.mutedInk, size, fontSize: 9, offset: labelOffset);
+      }
+    }
+
+    axisTicks(plot.xMin, plot.xMax, (x) => at(x, oy, oz), const Offset(3, 4));
+    axisTicks(plot.yMin, plot.yMax, (y) => at(ox, y, oz), const Offset(-18, 4));
+    axisTicks(plot.zMin, plot.zMax, (z) => at(ox, oy, z), const Offset(4, -12));
   }
 
   void _label(
@@ -749,12 +859,12 @@ class SpatialPlotPainter extends CustomPainter {
       }
       faces.sort((a, b) => a.depth.compareTo(b.depth));
       for (final face in faces) {
-        final light = (.5 + face.depth.clamp(-1.5, 1.5) / 6).clamp(.25, .75);
+        final light = (.55 + face.depth.clamp(-1.5, 1.5) / 10).clamp(.4, .7);
         canvas.drawPath(face.path, Paint()..color = style.seriesAt(index).withValues(alpha: light));
         canvas.drawPath(
           face.path,
           Paint()
-            ..color = style.seriesAt(index).withValues(alpha: .30)
+            ..color = style.seriesAt(index).withValues(alpha: .42)
             ..style = PaintingStyle.stroke
             ..strokeWidth = .45,
         );
