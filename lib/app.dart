@@ -97,10 +97,15 @@ class _MewHubAppState extends State<MewHubApp> with WidgetsBindingObserver {
       },
       supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
-        value: mewSystemUiOverlayStyle(Theme.of(context).brightness),
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (context, child) {
+        final theme = Theme.of(context);
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: mewSystemUiOverlayStyle(theme.brightness),
+          // Both routes can be translucent mid-transition. Keep the app's
+          // surface behind the Navigator, even if the native window is light.
+          child: ColoredBox(color: theme.scaffoldBackgroundColor, child: child),
+        );
+      },
       // Rebuild every page when the language changes, since strings come from t().
       key: ValueKey('lang-${I18n.isZh}'),
       home: const _Root(),

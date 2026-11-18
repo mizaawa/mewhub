@@ -245,16 +245,11 @@ class _Legend extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Math.tex(
-                    plot.curves[i].equationTex,
-                    key: ValueKey('cartesian-legend-$i'),
-                    mathStyle: MathStyle.text,
-                    textStyle: textStyle,
-                    onErrorFallback: (_) => Text(plot.curves[i].equationText, style: textStyle),
-                  ),
+                child: PlotFormula(
+                  key: ValueKey('cartesian-legend-$i'),
+                  tex: plot.curves[i].equationTex,
+                  text: plot.curves[i].equationText,
+                  style: textStyle,
                 ),
               ),
             ],
@@ -262,6 +257,26 @@ class _Legend extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Shared, width-constrained math legend for a curve or a surface.
+class PlotFormula extends StatelessWidget {
+  const PlotFormula({super.key, required this.tex, required this.text, required this.style});
+  final String tex;
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) => FittedBox(
+    fit: BoxFit.scaleDown,
+    alignment: Alignment.centerLeft,
+    child: Math.tex(
+      tex,
+      mathStyle: MathStyle.text,
+      textStyle: style,
+      onErrorFallback: (_) => Text(text, style: style),
+    ),
+  );
 }
 
 class _SwatchPainter extends CustomPainter {
@@ -1148,7 +1163,19 @@ class CartesianPlotPainter extends CustomPainter {
       } else {
         // y = ±… is one curve in one colour: the upper and the lower branch.
         for (final lower in expression.plusMinus ? const [false, true] : const [false]) {
-          _trace(path, visible, (x) => expression.evaluate(x, lower: lower), g, size);
+          if (expression.isConstant) {
+            final y = g.toScreen(Offset(0, expression.evaluate(0, lower: lower))).dy;
+            if (!y.isFinite || y < -2 || y > size.height + 2) continue;
+            path
+              ..moveTo(0, y)
+              ..lineTo(size.width, y);
+            // Interior anchor candidates, just as for a sampled curve's label.
+            for (var i = 1; i < 10; i++) {
+              visible.add(Offset(size.width * i / 10, y));
+            }
+          } else {
+            _trace(path, visible, (x) => expression.evaluate(x, lower: lower), g, size);
+          }
         }
       }
       if (curve.dashed) {
@@ -1172,8 +1199,7 @@ class CartesianPlotPainter extends CustomPainter {
     final shown = g.visible;
     final samples = (size.width * 1.5).ceil().clamp(200, 2400);
     final dx = shown.width / samples;
-    Offset? screen(double x) {
-      final y = f(x);
+    Offset? screen(double x, double y) {
       if (!y.isFinite) return null;
       final point = g.toScreen(Offset(x, y));
       return point.dy.isFinite && (point.dy - size.height / 2).abs() <= size.height * 8 ? point : null;
@@ -1200,14 +1226,15 @@ class CartesianPlotPainter extends CustomPainter {
       if (!y.isFinite) {
         // Defined → undefined: finish exactly at the domain edge.
         if (previous != null && y.isNaN) {
-          final end = screen(edge(previousX, x));
+          final endX = edge(previousX, x);
+          final end = screen(endX, f(endX));
           if (end != null && (end.dy - previous.dy).abs() < size.height * .5) path.lineTo(end.dx, end.dy);
         }
         previous = null;
         undefinedX = y.isNaN ? x : null;
         continue;
       }
-      final point = screen(x);
+      final point = screen(x, y);
       if (point == null) {
         previous = null;
         undefinedX = null;
@@ -1216,7 +1243,7 @@ class CartesianPlotPainter extends CustomPainter {
       // Undefined → defined: start exactly at the domain edge.
       if (previous == null && undefinedX != null) {
         final startX = edge(x, undefinedX);
-        final start = screen(startX);
+        final start = screen(startX, f(startX));
         if (start != null && (start.dy - point.dy).abs() < size.height * .5) {
           path.moveTo(start.dx, start.dy);
           previous = start;
@@ -1226,13 +1253,18 @@ class CartesianPlotPainter extends CustomPainter {
       undefinedX = null;
       var connect = previous != null;
       if (previous != null) {
-        final mid = f((previousX + x) / 2);
-        final middleY = g.toScreen(Offset(x, mid)).dy;
-        // A discontinuity or a sharp jump must not become a false vertical line.
+        // A steep straight line is continuous, too. Only spend the extra
+        // probes on tall chords, where a pole or a jump could fake a line.
+        final lastY = previous.dy;
+        bool followsChord(double t) {
+          final v = f(previousX + (x - previousX) * t);
+          final expected = lastY + (point.dy - lastY) * t;
+          return v.isFinite && (g.toScreen(Offset(x, v)).dy - expected).abs() < 8;
+        }
+
         connect =
-            mid.isFinite &&
-            (point.dy - previous.dy).abs() < size.height * .5 &&
-            (middleY - (point.dy + previous.dy) / 2).abs() < 8;
+            followsChord(.5) &&
+            ((point.dy - lastY).abs() < size.height * .5 || (followsChord(.25) && followsChord(.75)));
       }
       if (connect) {
         path.lineTo(point.dx, point.dy);

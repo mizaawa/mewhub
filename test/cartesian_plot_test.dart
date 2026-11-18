@@ -25,6 +25,17 @@ void main() {
       expect(PlotExpression.compile('2x + 1').evaluate(4), 9);
     });
 
+    test('reads full-width equations and signed or multi-digit superscripts without changing the source', () {
+      const source = 'Ｆ（Ｘ）＝２Ｘ⁻²＋√（９）';
+      final curve = CartesianPlot(functions: [source]).curves.single;
+      expect(curve.expression.source, source);
+      expect(curve.expression.evaluate(2), 3.5);
+      expect(curve.expression.name, 'F(x)');
+      expect(PlotExpression.compile('x¹²').evaluate(2), 4096);
+      expect(PlotExpression.compile('πx').evaluate(2), closeTo(2 * math.pi, 1e-10));
+      expect(() => PlotExpression.compile('Ｙ＝ＸＹ'), throwsFormatException);
+    });
+
     test('leaves domain gaps as nonfinite values', () {
       expect(PlotExpression.compile('1 / x').evaluate(0).isInfinite, isTrue);
       expect(PlotExpression.compile('sqrt(x)').evaluate(-1).isNaN, isTrue);

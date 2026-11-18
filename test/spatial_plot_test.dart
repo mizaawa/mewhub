@@ -27,6 +27,41 @@ void main() {
       expect(SpatialExpression.compile('z = −x² + cos(y)').evaluate(2, 0), -3);
     });
 
+    test('normalizes the equation name before parsing and displays y as y', () {
+      const source = 'Ｆ_２（Ｘ，Ｙ）＝２ＸＹ²＋√（Ｙ）';
+      final surface = SpatialExpression.compile(source);
+      expect(surface.source, source);
+      expect(surface.evaluate(3, 4), 98);
+      expect(surface.equationText, startsWith('F₂(x,y) = '));
+      expect(surface.equationText, contains('y²'));
+      expect(surface.equationTex, contains('y^{2}'));
+      expect(SpatialExpression.compile('Z = SIN(Y)').evaluate(2, math.pi / 2), closeTo(1, 1e-10));
+      expect(() => SpatialExpression.compile('xyz'), throwsFormatException);
+      expect(() => SpatialExpression.compile('x±y±1'), throwsFormatException);
+    });
+
+    test('caches the sampled resolution and preserves holes and both branches', () {
+      final plot = SpatialPlot(
+        xMin: -1,
+        xMax: 1,
+        yMin: -1,
+        yMax: 1,
+        zMin: -1,
+        zMax: 1,
+        surfaces: ['z = ±sqrt(1 - x² - y²)', 'z = 5'],
+      );
+      final meshes = plot.sampleSurfaces(4);
+      expect(plot.sampleSurfaces(4), same(meshes));
+      expect(meshes.map((mesh) => mesh.surface), [0, 0, 1]);
+      expect(meshes[0].vertices[12], (x: 0.0, y: 0.0, z: 1.0));
+      expect(meshes[1].vertices[12], (x: 0.0, y: 0.0, z: -1.0));
+      expect(meshes[0].vertices.first, isNull);
+      expect(meshes[2].vertices.every((v) => v == null), isTrue);
+      expect(plot.sampleSurfaces(8).first.vertices, hasLength(81));
+      expect(() => plot.sampleSurfaces(1000), throwsRangeError);
+      expect(SpatialPlot.fromJson(plot.toJson()), plot);
+    });
+
     test('keeps domain errors out of the mesh and rejects other variables', () {
       expect(SpatialExpression.compile('sqrt(9-x^2-y^2)').evaluate(4, 0), isNaN);
       expect(SpatialExpression.compile('1/(x-y)').evaluate(2, 2).isInfinite, isTrue);
@@ -39,6 +74,22 @@ void main() {
 
   group('spatial camera projection', () {
     final plot = SpatialPlot.example();
+
+    test('skips repaint for equal plots and camera values, but not new views or styles', () {
+      const size = Size(390, 844);
+      final style = CartesianPlotStyle.of(MewTheme.dark(0));
+      final old = SpatialPlotPainter(plot: plot, style: style, size: size);
+      expect(
+        SpatialPlotPainter(plot: SpatialPlot.fromJson(plot.toJson()), style: style, size: size).shouldRepaint(old),
+        isFalse,
+      );
+      expect(SpatialPlotPainter(plot: plot, style: style, size: size, yaw: .7).shouldRepaint(old), isTrue);
+      expect(SpatialPlotPainter(plot: plot, style: style, size: size.flipped).shouldRepaint(old), isTrue);
+      expect(
+        SpatialPlotPainter(plot: plot, style: CartesianPlotStyle.of(MewTheme.light(0)), size: size).shouldRepaint(old),
+        isTrue,
+      );
+    });
 
     test('extends every XYZ axis across the viewport', () {
       const size = Size(390, 844);
@@ -229,6 +280,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(SpatialPlotCard), findsOneWidget);
+    final legend = tester.widget<PlotFormula>(find.byKey(const ValueKey('spatial-legend-0')));
+    expect(legend.tex, 'z=x^{2}+y^{2}');
+    expect(legend.text, 'z = x² + y²');
     expect(find.text('空间直角坐标系'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.tap(find.byKey(const ValueKey('spatial-expand')));
@@ -431,6 +485,31 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('spatial-validation-error')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a malformed update cannot revive the previous spatial graph on rebuild', (tester) async {
+    Future<void> show(String output) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ToolCard(
+              part: ToolPart(callId: 'same', name: 'plot_spatial', input: '{}', output: output),
+            ),
+          ),
+        ),
+      ),
+    );
+    await show('{"type":"spatial_plot","plot":{"surfaces":["z = x+y"]}}');
+    expect(find.byType(SpatialPlotCard), findsOneWidget);
+    expect(
+      spatialPlotDescription(tester.widget<SpatialPlotCard>(find.byType(SpatialPlotCard)).plot),
+      endsWith('z = x + y'),
+    );
+    await show('{broken');
+    await show('{broken');
+    expect(find.byType(SpatialPlotCard), findsNothing);
+    await show('{"error":"invalid surface"}');
+    expect(find.text('invalid surface'), findsOneWidget);
   });
 
   testWidgets('pending, denied and malformed spatial results never draw', (tester) async {

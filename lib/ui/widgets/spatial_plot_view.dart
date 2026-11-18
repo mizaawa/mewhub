@@ -16,7 +16,7 @@ String spatialPlotTitle(SpatialPlot plot) =>
 /// Shared orthonormal world-to-screen transform, including orbit and pan state.
 @immutable
 class SpatialProjection {
-  const SpatialProjection({
+  SpatialProjection({
     required this.size,
     required this.plot,
     this.yaw = -.65,
@@ -34,12 +34,19 @@ class SpatialProjection {
 
   // Keep the world-space scale equal on all axes. Normalizing each range
   // independently makes a 1×1×10 box look like a cube and distorts geometry.
-  double get _halfSpan => math.max(plot.xMax - plot.xMin, math.max(plot.yMax - plot.yMin, plot.zMax - plot.zMin)) / 2;
+  late final _cosYaw = math.cos(yaw), _sinYaw = math.sin(yaw);
+  late final _cosPitch = math.cos(pitch), _sinPitch = math.sin(pitch);
+  late final _xMid = (plot.xMin + plot.xMax) / 2,
+      _yMid = (plot.yMin + plot.yMax) / 2,
+      _zMid = (plot.zMin + plot.zMax) / 2;
+  late final _center = size.center(Offset.zero) + pan;
+  late final double _halfSpan =
+      math.max(plot.xMax - plot.xMin, math.max(plot.yMax - plot.yMin, plot.zMax - plot.zMin)) / 2;
 
   Offset _projectUnit(double nx, double ny, double nz) {
-    final rx = nx * math.cos(yaw) - ny * math.sin(yaw);
-    final ry = nx * math.sin(yaw) + ny * math.cos(yaw);
-    final screenY = ry * math.sin(pitch) + nz * math.cos(pitch);
+    final rx = nx * _cosYaw - ny * _sinYaw;
+    final ry = nx * _sinYaw + ny * _cosYaw;
+    final screenY = ry * _sinPitch + nz * _cosPitch;
     // Orthographic projection keeps parallel edges parallel and preserves
     // equal lengths for equal world-space edges, so boxes do not look warped.
     return Offset(rx, -screenY);
@@ -48,16 +55,12 @@ class SpatialProjection {
   /// World-coordinate bounds of the XY plane needed to cover the viewport.
   /// Returns null when the camera looks almost exactly along the plane.
   Rect? xyPlaneWorldBounds(double z) {
-    final xMid = (plot.xMin + plot.xMax) / 2;
-    final yMid = (plot.yMin + plot.yMax) / 2;
-    final origin = project(xMid, yMid, z)?.at;
-    final xPoint = project(xMid + 1, yMid, z)?.at;
-    final yPoint = project(xMid, yMid + 1, z)?.at;
-    if (origin == null || xPoint == null || yPoint == null) return null;
-    final xAxis = xPoint - origin;
-    final yAxis = yPoint - origin;
+    if (_sinPitch.abs() < 1e-6) return null;
+    final origin = project(_xMid, _yMid, z)?.at;
+    if (origin == null) return null;
+    final xAxis = _xAxis, yAxis = _yAxis;
     final determinant = xAxis.dx * yAxis.dy - yAxis.dx * xAxis.dy;
-    if (!determinant.isFinite || determinant.abs() < 1e-5) return null;
+    if (!determinant.isFinite || determinant == 0) return null;
     final coords = <Offset>[];
     for (final corner in [
       Offset.zero,
@@ -66,8 +69,8 @@ class SpatialProjection {
       Offset(0, size.height),
     ]) {
       final delta = corner - origin;
-      final x = (delta.dx * yAxis.dy - delta.dy * yAxis.dx) / determinant + xMid;
-      final y = (xAxis.dx * delta.dy - xAxis.dy * delta.dx) / determinant + yMid;
+      final x = (delta.dx * yAxis.dy - delta.dy * yAxis.dx) / determinant + _xMid;
+      final y = (xAxis.dx * delta.dy - xAxis.dy * delta.dx) / determinant + _yMid;
       if (!x.isFinite || !y.isFinite) return null;
       coords.add(Offset(x, y));
     }
@@ -81,40 +84,29 @@ class SpatialProjection {
 
   /// A screen-clipped infinite XY grid line at [value] world units.
   (Offset, Offset)? xyGridLine({required bool fixedX, required double value, required double z}) {
-    final xMid = (plot.xMin + plot.xMax) / 2;
-    final yMid = (plot.yMin + plot.yMax) / 2;
-    final anchor = fixedX ? project(value, yMid, z)?.at : project(xMid, value, z)?.at;
-    final next = fixedX ? project(value, yMid + 1, z)?.at : project(xMid + 1, value, z)?.at;
-    if (anchor == null || next == null) return null;
-    return clipInfiniteLineToRect(anchor, next - anchor, Offset.zero & size);
+    final anchor = fixedX ? project(value, _yMid, z)?.at : project(_xMid, value, z)?.at;
+    if (anchor == null) return null;
+    return clipInfiniteLineToRect(anchor, fixedX ? _yAxis : _xAxis, Offset.zero & size);
   }
 
   /// Fit the projected coordinate box to both dimensions, including portrait
   /// full-screen canvases where the available height greatly exceeds width.
-  double get _fitScale {
-    final unit = _halfSpan;
-    final xMid = (plot.xMin + plot.xMax) / 2;
-    final yMid = (plot.yMin + plot.yMax) / 2;
-    final zMid = (plot.zMin + plot.zMax) / 2;
-    final corners = [
-      for (final x in [(plot.xMin - xMid) / unit, (plot.xMax - xMid) / unit])
-        for (final y in [(plot.yMin - yMid) / unit, (plot.yMax - yMid) / unit])
-          for (final z in [(plot.zMin - zMid) / unit, (plot.zMax - zMid) / unit]) _projectUnit(x, y, z),
-    ];
-    final minX = corners.map((p) => p.dx).reduce(math.min);
-    final maxX = corners.map((p) => p.dx).reduce(math.max);
-    final minY = corners.map((p) => p.dy).reduce(math.min);
-    final maxY = corners.map((p) => p.dy).reduce(math.max);
-    final width = math.max(maxX - minX, .01);
-    final height = math.max(maxY - minY, .01);
-    return math.min(size.width * .84 / width, size.height * .84 / height);
+  // The extrema of a projected box are the sums of its absolute axis extents.
+  // Compute them once per camera, not once per projected vertex.
+  late final double _scale = _fitScale() * zoom;
+  double _fitScale() {
+    final dx = plot.xMax - plot.xMin, dy = plot.yMax - plot.yMin, dz = plot.zMax - plot.zMin;
+    final width = (dx * _cosYaw.abs() + dy * _sinYaw.abs()) / _halfSpan;
+    final height = ((dx * _sinYaw.abs() + dy * _cosYaw.abs()) * _sinPitch.abs() + dz * _cosPitch.abs()) / _halfSpan;
+    return math.min(size.width * .84 / math.max(width, .01), size.height * .84 / math.max(height, .01));
   }
+
+  late final _xAxis = _projectUnit(1, 0, 0) * (_scale / _halfSpan);
+  late final _yAxis = _projectUnit(0, 1, 0) * (_scale / _halfSpan);
 
   /// World-space interval that keeps adjacent XY grid lines near 34 logical px.
   double get gridStep {
-    final worldScale = _fitScale * zoom / _halfSpan;
-    final xAxis = _projectUnit(1, 0, 0) * worldScale;
-    final yAxis = _projectUnit(0, 1, 0) * worldScale;
+    final xAxis = _xAxis, yAxis = _yAxis;
     final area = (xAxis.dx * yAxis.dy - xAxis.dy * yAxis.dx).abs();
     final pitchX = area / math.max(yAxis.distance, 1e-6);
     final pitchY = area / math.max(xAxis.distance, 1e-6);
@@ -186,16 +178,24 @@ class SpatialProjection {
 
   SpatialProjectedPoint? project(double x, double y, double z) {
     if (!x.isFinite || !y.isFinite || !z.isFinite) return null;
-    final unit = _halfSpan;
-    final nx = (x - (plot.xMin + plot.xMax) / 2) / unit;
-    final ny = (y - (plot.yMin + plot.yMax) / 2) / unit;
-    final nz = (z - (plot.zMin + plot.zMax) / 2) / unit;
-    final projected = _projectUnit(nx, ny, nz);
-    final scale = _fitScale * zoom;
-    final center = size.center(Offset.zero) + pan;
-    final depth = (nx * math.sin(yaw) + ny * math.cos(yaw)) * math.cos(pitch) - nz * math.sin(pitch);
-    return SpatialProjectedPoint(center + projected * scale, depth);
+    final nx = (x - _xMid) / _halfSpan;
+    final ny = (y - _yMid) / _halfSpan;
+    final nz = (z - _zMid) / _halfSpan;
+    final depth = (nx * _sinYaw + ny * _cosYaw) * _cosPitch - nz * _sinPitch;
+    return SpatialProjectedPoint(_center + _projectUnit(nx, ny, nz) * _scale, depth);
   }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SpatialProjection &&
+      other.size == size &&
+      other.plot == plot &&
+      other.yaw == yaw &&
+      other.pitch == pitch &&
+      other.zoom == zoom &&
+      other.pan == pan;
+  @override
+  int get hashCode => Object.hash(plot, size, yaw, pitch, zoom, pan);
 }
 
 class SpatialProjectedPoint {
@@ -430,8 +430,11 @@ class _SpatialPlotCardState extends State<SpatialPlotCard> {
   }
 }
 
-String spatialPlotDescription(SpatialPlot plot) =>
-    [spatialPlotTitle(plot), ...plot.surfaces.map((s) => 'z = $s'), ...plot.points.map((p) => p.caption)].join('; ');
+String spatialPlotDescription(SpatialPlot plot) => [
+  spatialPlotTitle(plot),
+  ...plot.expressions.map((e) => e.equationText),
+  ...plot.points.map((p) => p.caption),
+].join('; ');
 
 class _SpatialLegend extends StatelessWidget {
   const _SpatialLegend({required this.plot, required this.style});
@@ -455,11 +458,11 @@ class _SpatialLegend extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Flexible(
-                child: Text(
-                  plot.surfaces[i].contains('=') ? plot.surfaces[i] : 'z = ${plot.surfaces[i]}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: themeText(style),
+                child: PlotFormula(
+                  key: ValueKey('spatial-legend-$i'),
+                  tex: plot.expressions[i].equationTex,
+                  text: plot.expressions[i].equationText,
+                  style: style.textStyle.copyWith(color: style.ink, fontSize: 15),
                 ),
               ),
             ],
@@ -467,8 +470,6 @@ class _SpatialLegend extends StatelessWidget {
       ],
     );
   }
-
-  TextStyle themeText(CartesianPlotStyle style) => style.textStyle.copyWith(color: style.ink, fontSize: 12);
 }
 
 class SpatialPlotPage extends StatefulWidget {
@@ -959,35 +960,15 @@ class SpatialPlotPainter extends CustomPainter {
   }
 
   void _paintSurfaces(Canvas canvas, SpatialProjection g, Size size) {
-    final density = (math.min(size.shortestSide, 650) / 20).clamp(16, 32).toInt();
-    for (var index = 0; index < plot.expressions.length; index++) {
-      final expression = plot.expressions[index];
-      final values = List.generate(
-        density + 1,
-        (row) => List.generate(density + 1, (col) {
-          final x = plot.xMin + (plot.xMax - plot.xMin) * col / density;
-          final y = plot.yMin + (plot.yMax - plot.yMin) * row / density;
-          final z = expression.evaluate(x, y);
-          return z.isFinite && z >= plot.zMin && z <= plot.zMax ? g.project(x, y, z) : null;
-        }),
-      );
-      final faces =
-          <
-            ({
-              double depth,
-              Path path,
-              SpatialProjectedPoint a,
-              SpatialProjectedPoint b,
-              SpatialProjectedPoint c,
-              SpatialProjectedPoint d,
-            })
-          >[];
-      for (var row = 0; row < density; row++) {
-        for (var col = 0; col < density; col++) {
-          final a = values[row][col];
-          final b = values[row][col + 1];
-          final c = values[row + 1][col + 1];
-          final d = values[row + 1][col];
+    final divisions = (size.shortestSide / 20).clamp(16, SpatialPlot.maxMeshDivisions).toInt();
+    final stride = divisions + 1;
+    final faces = <({double depth, int surface, Path path})>[];
+    for (final mesh in plot.sampleSurfaces(divisions)) {
+      final projected = [for (final v in mesh.vertices) v == null ? null : g.project(v.x, v.y, v.z)];
+      for (var row = 0; row < divisions; row++) {
+        for (var col = 0; col < divisions; col++) {
+          final i = row * stride + col;
+          final a = projected[i], b = projected[i + 1], c = projected[i + stride + 1], d = projected[i + stride];
           if (a == null || b == null || c == null || d == null) continue;
           final path = Path()
             ..moveTo(a.at.dx, a.at.dy)
@@ -995,24 +976,25 @@ class SpatialPlotPainter extends CustomPainter {
             ..lineTo(c.at.dx, c.at.dy)
             ..lineTo(d.at.dx, d.at.dy)
             ..close();
-          faces.add((depth: (a.depth + b.depth + c.depth + d.depth) / 4, path: path, a: a, b: b, c: c, d: d));
+          faces.add((depth: (a.depth + b.depth + c.depth + d.depth) / 4, surface: mesh.surface, path: path));
         }
       }
-      faces.sort((a, b) => a.depth.compareTo(b.depth));
-      for (final face in faces) {
-        final light = (.55 + face.depth.clamp(-1.5, 1.5) / 10).clamp(.4, .7);
-        canvas.drawPath(face.path, Paint()..color = style.seriesAt(index).withValues(alpha: light));
-        canvas.drawPath(
-          face.path,
-          Paint()
-            ..color = style.seriesAt(index).withValues(alpha: .42)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = .45,
-        );
-      }
+    }
+    // In this camera convention a positive depth points away from the viewer.
+    // Sort all branches together; input order must not hide a nearer surface.
+    faces.sort((a, b) => b.depth.compareTo(a.depth));
+    final fill = Paint();
+    final wire = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = .45;
+    for (final face in faces) {
+      final color = style.seriesAt(face.surface);
+      final alpha = .55 - face.depth.clamp(-1.5, 1.5) / 10;
+      canvas.drawPath(face.path, fill..color = color.withValues(alpha: alpha));
+      canvas.drawPath(face.path, wire..color = color.withValues(alpha: .42));
     }
   }
 
   @override
-  bool shouldRepaint(SpatialPlotPainter old) => old.plot != plot || old.style != style || old.projection != projection;
+  bool shouldRepaint(SpatialPlotPainter old) => old.projection != projection || old.style != style;
 }

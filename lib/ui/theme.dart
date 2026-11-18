@@ -346,6 +346,27 @@ SystemUiOverlayStyle mewSystemUiOverlayStyle(Brightness brightness) => SystemUiO
   systemStatusBarContrastEnforced: false,
 );
 
+// animations uses material_ui's Theme, not Flutter's inherited Material
+// Theme. Its default fill is light even when our Navigator is in dark mode.
+class _ThemedSharedAxisTransitions extends PageTransitionsBuilder {
+  const _ThemedSharedAxisTransitions();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => SharedAxisTransition(
+    transitionType: SharedAxisTransitionType.horizontal,
+    animation: animation,
+    secondaryAnimation: secondaryAnimation,
+    fillColor: Theme.of(context).scaffoldBackgroundColor,
+    child: child,
+  );
+}
+
 class MewTheme {
   static ThemeData light(int accent) => _build(Brightness.light, accentColorAt(accent));
   static ThemeData dark(int accent) => _build(Brightness.dark, accentColorAt(accent));
@@ -406,7 +427,7 @@ class MewTheme {
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: SharedAxisPageTransitionsBuilder(transitionType: SharedAxisTransitionType.horizontal),
+          TargetPlatform.android: _ThemedSharedAxisTransitions(),
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
         },
       ),

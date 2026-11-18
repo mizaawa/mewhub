@@ -63,6 +63,9 @@ class SpatialSegment {
   };
 }
 
+typedef SpatialVertex = ({double x, double y, double z});
+typedef SpatialMesh = ({int surface, List<SpatialVertex?> vertices});
+
 /// Validated serializable data for an interactive 3D Cartesian graph.
 class SpatialPlot {
   SpatialPlot._({
@@ -73,10 +76,10 @@ class SpatialPlot {
     required this.yMax,
     required this.zMin,
     required this.zMax,
-    required this.surfaces,
+    required this.expressions,
     required this.points,
     required this.segments,
-  });
+  }) : surfaces = List.unmodifiable(expressions.map((e) => e.source));
 
   static const maxSurfaces = 6;
   static const maxPoints = 64;
@@ -95,7 +98,35 @@ class SpatialPlot {
   final List<SpatialPoint> points;
   final List<SpatialSegment> segments;
 
-  late final List<SpatialExpression> expressions = [for (final surface in surfaces) SpatialExpression.compile(surface)];
+  final List<SpatialExpression> expressions;
+
+  // Cache just the current resolution on this plot, not every graph in chat.
+  // Orbit, pan and zoom only reproject these world-space samples.
+  static const maxMeshDivisions = 32;
+  int _divisions = 0;
+  List<SpatialMesh> _meshes = const [];
+  List<SpatialMesh> sampleSurfaces(int divisions) {
+    RangeError.checkValueInInterval(divisions, 1, maxMeshDivisions, 'divisions');
+    if (_divisions == divisions) return _meshes;
+    final stride = divisions + 1;
+    List<SpatialVertex?> sample(SpatialExpression expression, bool lower) => List.unmodifiable(
+      List<SpatialVertex?>.generate(stride * stride, (i) {
+        final x = xMin + (xMax - xMin) * (i % stride) / divisions;
+        final y = yMin + (yMax - yMin) * (i ~/ stride) / divisions;
+        final z = expression.evaluate(x, y, lower: lower);
+        return z.isFinite && z >= zMin && z <= zMax ? (x: x, y: y, z: z) : null;
+      }),
+    );
+    _meshes = List.unmodifiable([
+      for (final (i, expression) in expressions.indexed) ...[
+        (surface: i, vertices: sample(expression, false)),
+        if (expression.plusMinus) (surface: i, vertices: sample(expression, true)),
+      ],
+    ]);
+    _divisions = divisions;
+    return _meshes;
+  }
+
   late final String _identity = jsonEncode(toJson());
 
   @override
@@ -132,7 +163,7 @@ class SpatialPlot {
     if (surfaces.length > maxSurfaces || points.length > maxPoints || segments.length > maxSegments) {
       throw const FormatException('Use at most 6 surfaces, 64 points and 32 segments per spatial plot.');
     }
-    final compiled = [for (final surface in surfaces) SpatialExpression.compile(surface).source];
+    final compiled = surfaces.map(SpatialExpression.compile);
     for (final point in points) {
       _coordinate(point.x, 'point x');
       _coordinate(point.y, 'point y');
@@ -157,7 +188,7 @@ class SpatialPlot {
       yMax: yMax,
       zMin: zMin,
       zMax: zMax,
-      surfaces: List.unmodifiable(compiled),
+      expressions: List.unmodifiable(compiled),
       points: List.unmodifiable(points),
       segments: List.unmodifiable(segments),
     );
@@ -303,7 +334,7 @@ AppTool buildSpatialPlotTool() => AppTool(
       'description':
           'Up to 6 z=f(x,y) expressions, such as "x^2+y^2", "z = sin(x)*cos(y)", or '
           '"f(x,y) = sqrt(9-x^2-y^2)". Supports + - * / % ^, parentheses, implicit multiplication, pi, e, '
-          'sin, cos, tan, asin, acos, atan, sqrt, cbrt, abs, ln, log, exp, floor and ceil.',
+          'sin, cos, tan, asin, acos, atan, sqrt, cbrt, abs, ln, log, exp, floor and ceil. One ± draws both branches.',
       'maxItems': SpatialPlot.maxSurfaces,
       'items': {'type': 'string', 'maxLength': SpatialExpression.maxLength},
     },

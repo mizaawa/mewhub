@@ -51,19 +51,7 @@ class PlotExpression {
     if (source.isEmpty || source.length > maxLength) {
       throw const FormatException('An expression must contain 1–512 characters.');
     }
-    var rest = source
-        .replaceAll('×', '*')
-        .replaceAll('·', '*')
-        .replaceAll('÷', '/')
-        .replaceAll('−', '-')
-        .replaceAll('π', 'pi')
-        .replaceAll('²', '^2')
-        .replaceAll('³', '^3')
-        .replaceAll('（', '(')
-        .replaceAll('）', ')')
-        .replaceAll('＝', '=')
-        .replaceAll('：', ':')
-        .replaceAll(r'\pm', '±');
+    var rest = _normalizeFormula(source);
     String? label;
     final labelMatch = _labelPrefix.firstMatch(rest);
     if (labelMatch != null) {
@@ -219,9 +207,9 @@ class _Variable extends _Node {
   @override
   int get level => _atomLevel;
   @override
-  String tex() => 'x';
+  String tex() => isY ? 'y' : 'x';
   @override
-  String text() => 'x';
+  String text() => tex();
 }
 
 class _Unary extends _Node {
@@ -540,47 +528,62 @@ class _Function extends _Node {
   }
 }
 
+// Normalize keyboard and textbook notation before looking for an equation name.
+// The original source is retained for editing and saved conversations.
+final _fullWidthAscii = RegExp(r'[！-～]');
+final _writtenPower = RegExp(r'⁻?[⁰¹²³⁴⁵⁶⁷⁸⁹]+');
+final _plainExponent = {for (final entry in _superscripts.entries) entry.value: entry.key};
+String _normalizeFormula(String source) => source
+    .replaceAllMapped(_fullWidthAscii, (m) => String.fromCharCode(m[0]!.codeUnitAt(0) - 0xfee0))
+    .replaceAllMapped(_writtenPower, (m) => '^${m[0]!.split('').map((c) => _plainExponent[c]!).join()}')
+    .replaceAll('×', '*')
+    .replaceAll('·', '*')
+    .replaceAll('÷', '/')
+    .replaceAll('−', '-')
+    .replaceAll('π', ' pi ')
+    .replaceAll('√', ' sqrt ')
+    .replaceAll(r'\pm', '±');
+
 class SpatialExpression {
-  SpatialExpression._(this.source, this._root);
+  SpatialExpression._(this.source, this._root, this.name, this.plusMinus);
 
   static const maxLength = PlotExpression.maxLength;
   final String source;
   final _Node _root;
 
-  // Remove a conventional z= or f(x,y)= prefix, then reuse the same safe parser.
-  static final _lhs = RegExp(r"^(?:[zZ]|[A-Za-z](?:_?\{?\d{1,2}\}?)?'{0,2}\s*\(\s*[xX]\s*[,，]\s*[yY]\s*\))\s*=\s*");
+  final String name;
+  final bool plusMinus;
+  late final String equationTex = '${plotNameTex(name)}=${_root.tex()}';
+  late final String equationText = '${plotNameText(name)} = ${_root.text()}';
+
+  static final _lhs = RegExp(r"^(?:[zZ]|([A-Za-z](?:_?\{?\d{1,2}\}?)?'{0,2})\s*\(\s*[xX]\s*,\s*[yY]\s*\))\s*=\s*");
 
   factory SpatialExpression.compile(String expression) {
     final source = expression.trim();
     if (source.isEmpty || source.length > maxLength) {
       throw const FormatException('A surface expression must contain 1–512 characters.');
     }
-    final rhs = source
-        .replaceFirst(_lhs, '')
-        .replaceAll('×', '*')
-        .replaceAll('·', '*')
-        .replaceAll('÷', '/')
-        .replaceAll('−', '-')
-        .replaceAll('π', 'pi')
-        .replaceAll('²', '^2')
-        .replaceAll('³', '^3')
-        .replaceAll('（', '(')
-        .replaceAll('）', ')');
+    final normalized = _normalizeFormula(source);
+    final lhs = _lhs.firstMatch(normalized);
+    final rhs = normalized.substring(lhs?.end ?? 0);
     if (rhs.trim().isEmpty) throw const FormatException('A surface needs an expression after =.');
-    final parser = _Parser(rhs)..surface = true;
-    return SpatialExpression._(source, parser.parse());
+    final parser = _Parser(rhs.toLowerCase(), surface: true);
+    final root = parser.parse();
+    final function = lhs?.group(1);
+    final name = function == null ? 'z' : '${PlotExpression._plainName(function)}(x,y)';
+    return SpatialExpression._(source, root, name, parser.plusMinus != 0);
   }
 
-  double evaluate(double x, double y) => _root.evaluate(x, 1, y);
+  double evaluate(double x, double y, {bool lower = false}) => _root.evaluate(x, lower ? -1 : 1, y);
 }
 
 class _Parser {
-  _Parser(this.source);
+  _Parser(this.source, {this.surface = false});
   final String source;
   int _index = 0;
   int _depth = 0;
   int _nodes = 0;
-  bool surface = false;
+  final bool surface;
 
   /// How many `±` the expression used; more than one is rejected.
   int plusMinus = 0;
@@ -588,6 +591,9 @@ class _Parser {
   static final _number = RegExp(r'(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?');
   // Digits may end a name, as in log2 and log10.
   static final _identifier = RegExp(r'[a-z]+\d*');
+  static final _adjacentVariables = RegExp(r'^[xy]{2,}$');
+  static final _whitespace = RegExp(r'\s');
+  static final _letter = RegExp(r'[a-z]');
   static final _functions = <String, double Function(double)>{
     'sin': math.sin,
     'cos': math.cos,
@@ -610,7 +616,7 @@ class _Parser {
   };
 
   String get _peek {
-    while (_index < source.length && RegExp(r'\s').hasMatch(source[_index])) {
+    while (_index < source.length && _whitespace.hasMatch(source[_index])) {
       _index++;
     }
     return _index < source.length ? source[_index] : '';
@@ -664,7 +670,7 @@ class _Parser {
       if (next == '*' || next == '/' || next == '%') {
         _index++;
         result = _node(_Binary(result, next, _unary()));
-      } else if (next == '(' || RegExp(r'[a-z]').hasMatch(next)) {
+      } else if (next == '(' || _letter.hasMatch(next)) {
         result = _node(_Binary(result, '*', _unary()));
       } else {
         return result;
@@ -709,6 +715,11 @@ class _Parser {
     if (identifier != null) {
       _index = identifier.end;
       final name = identifier.group(0)!;
+      // Consume xy as two factors so xy² is x * (y²), not (xy)².
+      if (surface && _adjacentVariables.hasMatch(name)) {
+        _index = identifier.start + 1;
+        return _node(_Variable(name[0] == 'y'));
+      }
       if (name == 'x') return _node(const _Variable());
       if (name == 'y' && surface) return _node(const _Variable(true));
       if (name == 'pi') return _node(const _Constant(math.pi, 'pi'));

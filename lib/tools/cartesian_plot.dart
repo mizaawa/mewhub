@@ -186,9 +186,10 @@ class CartesianPlot {
     required this.yMin,
     required this.yMax,
     required this.points,
-    required this.functions,
+    required List<PlotExpression> expressions,
     required this.segments,
-  });
+  }) : functions = List.unmodifiable(expressions.map((e) => e.source)),
+       curves = List.unmodifiable(_nameCurves(expressions));
 
   static const maxFunctions = 8;
   static const maxPoints = 64;
@@ -210,7 +211,7 @@ class CartesianPlot {
 
   /// [functions] compiled once and named: unnamed curves become y₁, y₂ … when
   /// there are several, so each can be told apart without its colour.
-  late final List<PlotCurve> curves = _nameCurves();
+  final List<PlotCurve> curves;
 
   // Plots are parsed again on every rebuild of a chat message; equal content
   // must compare equal so a painter does not redraw an unchanged graph.
@@ -247,10 +248,7 @@ class CartesianPlot {
       _coordinate(point.y, 'point y');
       _text(point.label, 'point label', 40);
     }
-    final validatedFunctions = <String>[];
-    for (final function in functions) {
-      validatedFunctions.add(PlotExpression.compile(function).source);
-    }
+    final expressions = functions.map(PlotExpression.compile).toList();
     if (segments.length > maxSegments) throw const FormatException('Use at most 32 segments per plot.');
     final names = [for (final point in points) point.name];
     for (final segment in segments) {
@@ -274,7 +272,7 @@ class CartesianPlot {
       yMin: yMin,
       yMax: yMax,
       points: List.unmodifiable(points),
-      functions: List.unmodifiable(validatedFunctions),
+      expressions: expressions,
       segments: List.unmodifiable(segments),
     );
   }
@@ -347,8 +345,7 @@ class CartesianPlot {
     if (segments.isNotEmpty) 'segments': segments.map((segment) => segment.toJson()).toList(),
   };
 
-  List<PlotCurve> _nameCurves() {
-    final expressions = functions.map(PlotExpression.compile).toList();
+  static List<PlotCurve> _nameCurves(List<PlotExpression> expressions) {
     // A bare expression and a plain "y = …" are both just "y"; an unnamed
     // constant is a horizontal reference line rather than a numbered curve.
     bool plain(PlotExpression e) => !e.isVertical && e.label == null && (e.name == null || e.name == 'y');

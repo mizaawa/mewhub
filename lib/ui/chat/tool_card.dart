@@ -65,53 +65,48 @@ class ToolCard extends StatefulWidget {
   State<ToolCard> createState() => _ToolCardState();
 }
 
+typedef _PlotResult = ({CartesianPlot? plane, SpatialPlot? space, String? error});
+const _PlotResult _noPlot = (plane: null, space: null, error: null);
+
 class _ToolCardState extends State<ToolCard> {
   bool _open = false;
-  // A streaming reply rebuilds this card many times a second; the plot is
-  // parsed and compiled once per tool output.
-  String? _plotSource;
-  CartesianPlot? _plotCache;
-  SpatialPlot? _spatialCache;
+  (String, String, bool)? _plotKey;
+  _PlotResult _cachedPlot = _noPlot;
 
-  SpatialPlot? _spatial() {
-    final part = widget.part;
-    if (part.name != 'plot_spatial' || !part.executed || part.isError || part.approval == ToolApproval.denied) {
-      return null;
+  _PlotResult _plotResult(ToolPart part) {
+    final source = part.output;
+    if (source == null ||
+        part.approval == ToolApproval.denied ||
+        (part.name != 'plot_cartesian' && part.name != 'plot_spatial')) {
+      return _noPlot;
     }
-    if (part.output == _plotSource) return _spatialCache;
-    _plotSource = part.output;
-    try {
-      final output = jsonDecode(part.output!);
-      if (output is! Map<String, dynamic> || output['type'] != 'spatial_plot' || output['plot'] is! Map) return null;
-      return _spatialCache = SpatialPlot.fromJson(Map<String, dynamic>.from(output['plot'] as Map));
-    } on FormatException {
-      return null;
-    } on TypeError {
-      return null;
+    final key = (part.name, source, part.isError);
+    if (_plotKey != key) {
+      _plotKey = key;
+      _cachedPlot = _decodePlot(part, source);
     }
+    return _cachedPlot;
   }
 
-  CartesianPlot? _plot() {
-    final part = widget.part;
-    if (part.name != 'plot_cartesian' || !part.executed || part.isError || part.approval == ToolApproval.denied) {
-      return null;
-    }
-    if (part.output == _plotSource) return _plotCache;
-    _plotSource = part.output;
-    return _plotCache = _parsePlot(part);
-  }
-
-  static CartesianPlot? _parsePlot(ToolPart part) {
+  // Cache failures as well: rebuilding a malformed history entry must not
+  // resurrect a previous plot or keep decoding the same payload while streaming.
+  static _PlotResult _decodePlot(ToolPart part, String source) {
     try {
-      final output = jsonDecode(part.output!);
-      if (output is! Map<String, dynamic> || output['type'] != 'cartesian_plot' || output['plot'] is! Map) {
-        return null;
-      }
-      return CartesianPlot.fromJson(Map<String, dynamic>.from(output['plot'] as Map));
+      final output = jsonDecode(source);
+      if (output is! Map<String, dynamic>) return _noPlot;
+      final error = output['error'];
+      if (error != null) return (plane: null, space: null, error: error.toString());
+      final json = output['plot'];
+      if (part.isError || json is! Map<String, dynamic>) return _noPlot;
+      return switch ((part.name, output['type'])) {
+        ('plot_cartesian', 'cartesian_plot') => (plane: CartesianPlot.fromJson(json), space: null, error: null),
+        ('plot_spatial', 'spatial_plot') => (plane: null, space: SpatialPlot.fromJson(json), error: null),
+        _ => _noPlot,
+      };
     } on FormatException {
-      return null;
+      return _noPlot;
     } on TypeError {
-      return null;
+      return _noPlot;
     }
   }
 
@@ -146,10 +141,7 @@ class _ToolCardState extends State<ToolCard> {
     final p = widget.part;
     final running = !p.executed && p.approval != ToolApproval.pending;
     final summary = _summary();
-    final plot = _plot();
-    final spatial = _spatial();
-    final result = p.name == 'plot_cartesian' && p.output != null ? tryJsonDecode(p.output!) : null;
-    final plotError = result is Map ? result['error']?.toString() : null;
+    final (plane: plot, space: spatial, error: plotError) = _plotResult(p);
     final title = Text.rich(
       TextSpan(
         children: [
@@ -187,7 +179,7 @@ class _ToolCardState extends State<ToolCard> {
         ),
       ),
     );
-    final details = Padding(
+    late final details = Padding(
       padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
