@@ -64,7 +64,9 @@ flutter run
 
 1. 修改 `pubspec.yaml` 的 `version`
 2. 打标签并推送：`git tag v1.2.3 && git push origin v1.2.3`
-3. `Release` 工作流会构建 APK / AAB / IPA 并发布到 GitHub Release
+3. `Release` 工作流等待 Android 和 iOS 都构建成功，再把 APK、AAB、未签名 IPA 和两份 SHA-256 校验文件一起上传到草稿。全部校验通过后才公开版本。
+
+若有一端失败，在 Actions 中重跑失败的任务即可；不要在 Releases 页面提前公开草稿。已公开版本的附件不会被工作流覆盖。
 
 首次发布前，在仓库 Settings → Secrets and variables → Actions 中配置以下四个 Secrets。CI 主分支 APK 和 Release APK/AAB 都使用同一份 JKS；缺少任意一项时构建会失败，避免发布无法覆盖升级的临时签名包。
 
@@ -91,7 +93,7 @@ MewHub is a multi-provider AI chat client inspired by [RikkaHub](https://github.
 
 **Install:** grab an APK (Android) or the unsigned IPA (iOS, sideload with AltStore/SideStore) from [Releases](https://github.com/mizaawa/mewhub/releases).
 
-**Build:** `flutter pub get && flutter test && flutter run` (Flutter 3.47+). Push a `vX.Y.Z` tag to publish a release.
+**Build:** `flutter pub get && flutter test && flutter run` (Flutter 3.47+). Push a `vX.Y.Z` tag to release. The workflow publishes only after the Android packages, unsigned iOS IPA and both checksum files have been uploaded and verified.
 
 ## License
 

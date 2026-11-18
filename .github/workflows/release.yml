@@ -4,7 +4,6 @@ name: Release
 #
 # Triggers:
 #   - pushing a tag like v1.2.3 (creates the release automatically)
-#   - publishing a release in the GitHub UI
 #   - manual run with an existing tag
 #
 # Required repository secrets for a stable Android signature:
@@ -16,8 +15,6 @@ name: Release
 on:
   push:
     tags: ['v*']
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -25,22 +22,21 @@ on:
         required: true
 
 concurrency:
-  group: release-${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   FLUTTER_VERSION: '3.47.9'
-  TAG: ${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   meta:
     name: Resolve version
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.v.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
       build: ${{ steps.v.outputs.build }}
       prerelease: ${{ steps.v.outputs.prerelease }}
@@ -60,7 +56,6 @@ jobs:
           pre=false
           [[ "$version" == *-* ]] && pre=true
           {
-            echo "tag=$tag"
             echo "version=$core"
             echo "build=$build"
             echo "prerelease=$pre"
@@ -74,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.TAG }}
+          ref: refs/tags/${{ env.TAG }}
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -103,7 +98,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.TAG }}
+          ref: refs/tags/${{ env.TAG }}
 
       - uses: actions/setup-java@v6
         with:
@@ -168,13 +163,14 @@ jobs:
           cp "$out/app-x86_64-release.apk"      "dist/MewHub-$VERSION-android-x86_64.apk"
           cp "$out/app-release.apk"             "dist/MewHub-$VERSION-android-universal.apk"
           cp build/app/outputs/bundle/release/app-release.aab "dist/MewHub-$VERSION-android.aab"
-          (cd dist && sha256sum ./* > SHA256SUMS-android.txt)
+          (cd dist && sha256sum ./*.apk ./*.aab > SHA256SUMS-android.txt)
           ls -la dist
 
       - uses: actions/upload-artifact@v7
         with:
           name: android-dist
           path: dist/*
+          if-no-files-found: error
           retention-days: 14
 
   ios:
@@ -185,7 +181,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.TAG }}
+          ref: refs/tags/${{ env.TAG }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -203,33 +199,41 @@ jobs:
           mkdir -p dist Payload
           cp -R build/ios/iphoneos/Runner.app Payload/
           zip -qry "dist/MewHub-$VERSION-ios-unsigned.ipa" Payload
-          (cd dist && shasum -a 256 ./* > SHA256SUMS-ios.txt)
+          (cd dist && shasum -a 256 ./*.ipa > SHA256SUMS-ios.txt)
           ls -la dist
 
       - uses: actions/upload-artifact@v7
         with:
           name: ios-dist
           path: dist/*
+          if-no-files-found: error
           retention-days: 14
 
   publish:
-    name: Publish release
-    needs: [meta, android]
+    name: Publish Android and iOS together
+    needs: [meta, android, ios]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.TAG }}
+          ref: refs/tags/${{ env.TAG }}
 
       - uses: actions/download-artifact@v8
         with:
           name: android-dist
           path: dist
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: ios-dist
+          path: dist
+
       - name: Release notes
         shell: bash
-        env:
-          VERSION: ${{ needs.meta.outputs.version }}
         run: |
           {
             if [ -f "docs/releases/v$VERSION.md" ]; then
@@ -242,39 +246,48 @@ jobs:
             echo "|---|---|"
             echo "| Android, most phones (64-bit) | \`MewHub-$VERSION-android-arm64-v8a.apk\` |"
             echo "| Android, older 32-bit phones | \`MewHub-$VERSION-android-armeabi-v7a.apk\` |"
+            echo "| Android, x86_64 devices | \`MewHub-$VERSION-android-x86_64.apk\` |"
             echo "| Android, any device | \`MewHub-$VERSION-android-universal.apk\` |"
             echo "| Android, Google Play upload | \`MewHub-$VERSION-android.aab\` |"
+            echo "| iOS, unsigned (sign before installing) | \`MewHub-$VERSION-ios-unsigned.ipa\` |"
             echo
-            echo "The unsigned iOS IPA is added separately if its build succeeds."
-            echo "Android checksums are in \`SHA256SUMS-android.txt\`."
+            echo "SHA-256 checksums: \`SHA256SUMS-android.txt\` and \`SHA256SUMS-ios.txt\`."
           } > notes.md
 
-      - uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.meta.outputs.tag }}
-          name: MewHub ${{ needs.meta.outputs.tag }}
-          body_path: notes.md
-          generate_release_notes: true
-          prerelease: ${{ needs.meta.outputs.prerelease }}
-          fail_on_unmatched_files: true
-          files: |
-            dist/*.apk
-            dist/*.aab
-            dist/SHA256SUMS-android.txt
+      - name: Verify packages and publish the complete draft
+        working-directory: dist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          export LC_ALL=C
+          prefix="./MewHub-$VERSION"
+          android=("$prefix"-android-{arm64-v8a,armeabi-v7a,universal,x86_64}.apk "$prefix-android.aab")
+          ios="$prefix-ios-unsigned.ipa"
+          assets=("${android[@]}" "$ios" ./SHA256SUMS-{android,ios}.txt)
+          for file in "${assets[@]}"; do
+            if [[ ! -s "$file" ]]; then echo "::error::Missing or empty: $file"; exit 1; fi
+          done
+          # Check the manifests cover exactly the required packages, not just what happened to build.
+          sha256sum "${android[@]}" | sort | diff -u <(sort SHA256SUMS-android.txt) -
+          sha256sum "$ios" | diff -u SHA256SUMS-ios.txt -
 
-  publish-ios:
-    name: Attach iOS IPA
-    needs: [meta, publish, ios]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: ios-dist
-          path: dist
+          # A null release is different from a failed lookup. Never overwrite a public release on retry.
+          state=$(gh api graphql -F owner='{owner}' -F repo='{repo}' -f tag="$TAG" \
+            -f query='query($owner:String!, $repo:String!, $tag:String!) {
+              repository(owner:$owner, name:$repo) { release(tagName:$tag) { isDraft } }
+            }' --jq '.data.repository.release | if . == null then "new" elif .isDraft then "draft" else "published" end')
+          case "$state" in
+            new) gh release create "$TAG" --verify-tag --draft --prerelease="$PRERELEASE" \
+                   --title "MewHub $TAG" --notes-file ../notes.md --generate-notes ;;
+            draft) echo "Resuming the draft for $TAG" ;;
+            *) echo "::error::Refusing to change a non-draft release: $TAG ($state)"; exit 1 ;;
+          esac
+          gh release upload "$TAG" "${assets[@]}" --clobber
 
-      - uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.meta.outputs.tag }}
-          files: |
-            dist/*.ipa
-            dist/SHA256SUMS-ios.txt
+          # Compare GitHub's digest for every uploaded asset (including the checksum files) before going public.
+          { cat SHA256SUMS-{android,ios}.txt; sha256sum ./SHA256SUMS-{android,ios}.txt; } | sort > "$RUNNER_TEMP/expected.sha256"
+          gh release view "$TAG" --json assets --jq '.assets[] | select(.state == "uploaded") | "\(.digest | ltrimstr("sha256:"))  ./\(.name)"' \
+            | sort | diff -u "$RUNNER_TEMP/expected.sha256" -
+          gh release edit "$TAG" --draft=false --prerelease="$PRERELEASE"
